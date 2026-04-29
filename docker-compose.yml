@@ -1,0 +1,61 @@
+version: "3.9"
+services:
+  terminal-sandbox:
+    image: python:3.11-alpine
+    command: sh -c "pip install fastmcp uvicorn && python /app/mcp_servers/terminal_server.py"
+    volumes: ["./backend:/app"]
+    ports: ["8001:8001"]
+    networks: [axiom-net]
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  logdb:
+    image: python:3.11-slim
+    command: sh -c "pip install fastmcp uvicorn aiosqlite && python /app/mcp_servers/logdb_server.py"
+    volumes: ["./backend:/app", "./data:/data"]
+    ports: ["8002:8002"]
+    networks: [axiom-net]
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  github-mcp:
+    image: python:3.11-slim
+    command: sh -c "pip install fastmcp uvicorn pygithub && python /app/mcp_servers/github_server.py"
+    volumes: ["./backend:/app"]
+    ports: ["8003:8003"]
+    networks: [axiom-net]
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_REPO=${GITHUB_REPO}
+      - PYTHONUNBUFFERED=1
+
+  backend:
+    image: python:3.11-slim
+    command: sh -c "pip install -r /app/requirements.txt && cd /app && uvicorn main:app --host 0.0.0.0 --port 8080 --reload"
+    volumes: ["./backend:/app", "./data:/data", "./requirements.txt:/app/requirements.txt"]
+    ports: ["8080:8080"]
+    networks: [axiom-net]
+    depends_on: [terminal-sandbox, logdb, github-mcp]
+    environment:
+      - VLLM_BASE_URL=${VLLM_BASE_URL}
+      - VLLM_API_KEY=${VLLM_API_KEY}
+      - MODEL_NAME=${MODEL_NAME}
+      - TERMINAL_MCP_URL=http://terminal-sandbox:8001
+      - LOGDB_MCP_URL=http://logdb:8002
+      - GITHUB_MCP_URL=http://github-mcp:8003
+      - PYTHONUNBUFFERED=1
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    volumes: ["./frontend:/app"]
+    ports: ["3000:3000"]
+    networks: [axiom-net]
+    depends_on: [backend]
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
+
+networks:
+  axiom-net:
+    driver: bridge

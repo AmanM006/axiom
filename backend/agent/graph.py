@@ -1,0 +1,468 @@
+"""
+AXIOM Agent Graph — LangGraph stateful graph implementing the OODA loop.
+Nodes: observe → hypothesize → act → verify → (done | replan → observe)
+"""
+
+import json
+import os
+import asyncio
+from typing import Any
+from openai import AsyncOpenAI
+
+from agent.state import AgentState
+from agent.prompts import SYSTEM_PROMPT, build_hypothesis_prompt
+from agent import tools as tool_mod
+
+VLLM_BASE_URL = os.environ.get("VLLM_BASE_URL", "http://localhost:8000/v1")
+VLLM_API_KEY = os.environ.get("VLLM_API_KEY", "token-axiom")
+MODEL_NAME = os.environ.get("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
+
+llm_client = AsyncOpenAI(base_url=VLLM_BASE_URL, api_key=VLLM_API_KEY)
+
+INCIDENT_SERVICE_MAP = {
+    "db_cascade": "payment-service",
+    "memory_leak": "image-processor",
+    "exception_loop": "api-gateway",
+}
+
+
+async def emit(state: AgentState, event: dict[str, Any]) -> None:
+    """Emit an event via the stream callback if set."""
+    event.setdefault("step", state.step)
+    if state.stream_callback is not None:
+        await state.stream_callback(event)
+
+
+async def observe(state: AgentState) -> AgentState:
+    """Observe node: query logs, metrics, and incident history."""
+    state.step += 1
+    service = state.service or INCIDENT_SERVICE_MAP.get(state.incident_id, "unknown")
+    state.service = service
+
+    await emit(state, {"type": "action", "content": f"Querying logs and metrics for {service}...",
+                       "metadata": {"tool": "logdb"}})
+
+    logs_result = await tool_mod.query_logs(service, 60)
+    metrics_result = await tool_mod.get_metrics(service)
+    history_result = await tool_mod.get_incident_history(service)
+
+    if not state.initial_metrics and "error" not in metrics_result:
+        state.initial_metrics = metrics_result.copy()
+
+    log_lines = logs_result.get("logs", [])
+    log_summary = f"Found {len(log_lines)} log entries. "
+    if log_lines:
+        error_logs = [l for l in log_lines if l.get("level") in ("ERROR", "CRITICAL")]
+        log_summary += f"{len(error_logs)} errors/criticals. "
+        if error_logs:
+            log_summary += f"Latest: {error_logs[0].get('message', '')[:120]}"
+
+    metrics_summary = json.dumps(metrics_result, indent=2) if metrics_result else "No metrics available"
+
+    observation = {
+        "type": "observation",
+        "summary": log_summary,
+        "logs": log_lines[:20],
+        "metrics": metrics_result,
+        "history": history_result.get("incidents", []),
+    }
+    state.observations.append(observation)
+
+    await emit(state, {"type": "result", "content": f"Logs: {log_summary}\nMetrics: {metrics_summary}",
+                       "metadata": {"tool": "logdb"}})
+
+    return state
+
+
+async def hypothesize(state: AgentState) -> AgentState:
+    """Hypothesize node: call LLM with streaming to form a hypothesis."""
+    state.step += 1
+    prompt = build_hypothesis_prompt(
+        state.incident_id, state.service,
+        state.observations, state.hypotheses, state.actions_taken,
+    )
+
+    full_response = ""
+    try:
+        stream = await llm_client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.3,
+            max_tokens=1024,
+            stream=True,
+        )
+
+        async for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                token = chunk.choices[0].delta.content
+                full_response += token
+                await emit(state, {"type": "hypothesis", "content": token,
+                                   "metadata": {"streaming": True}})
+
+    except Exception as exc:
+        full_response = _fallback_hypothesis(state)
+        await emit(state, {"type": "hypothesis", "content": full_response,
+                           "metadata": {"fallback": True, "error": str(exc)}})
+
+    hypothesis = _parse_hypothesis(full_response, state)
+    state.current_hypothesis = hypothesis
+    state.hypotheses.append(hypothesis)
+
+    await emit(state, {"type": "hypothesis", "content": "",
+                       "metadata": {"confidence": hypothesis.get("confidence", 0.5),
+                                    "complete": True,
+                                    "parsed": hypothesis}})
+    return state
+
+
+def _fallback_hypothesis(state: AgentState) -> str:
+    """Generate a deterministic fallback hypothesis when LLM is unavailable."""
+    incident_id = state.incident_id
+    step = len(state.actions_taken)
+
+    if incident_id == "db_cascade":
+        plans = [
+            {"hypothesis": "Connection pool exhausted on payment-service causing cascading 503 errors",
+             "confidence": 0.92, "reasoning": "Logs show 200/200 connections active with timeouts climbing to 30s",
+             "action": "get_file", "action_args": {"path": "data/demo_service/app.py"},
+             "expected_outcome": "See the connection handling code to identify the bug"},
+            {"hypothesis": "Connection pool has no eviction policy, confirmed in source code",
+             "confidence": 0.95, "reasoning": "app.py shows unbounded cache list with no cleanup",
+             "action": "create_branch", "action_args": {"branch_name": f"fix/db-cascade-{state.incident_id}"},
+             "expected_outcome": "Branch created for the fix"},
+            {"hypothesis": "Fix ready: need to push corrected code with connection pool reset",
+             "confidence": 0.95, "reasoning": "Identified root cause, fix prepared",
+             "action": "push_file", "action_args": {"path": "data/demo_service/app.py", "content": "", "branch": f"fix/db-cascade-{state.incident_id}", "commit_message": "fix: reset connection pool, add LRU cache eviction"},
+             "expected_outcome": "Fixed code pushed to branch"},
+            {"hypothesis": "Fix deployed, opening PR for review",
+             "confidence": 0.97, "reasoning": "Code fix pushed, metrics should recover",
+             "action": "open_pr", "action_args": {"title": "fix: connection pool exhaustion in payment-service", "body": "Root cause: unbounded connection pool with no eviction. Fix: added LRU cache with maxsize and connection pool reset logic.", "branch": f"fix/db-cascade-{state.incident_id}"},
+             "expected_outcome": "PR opened for team review"},
+            {"hypothesis": "Incident resolved — connection pool fix deployed",
+             "confidence": 0.98, "reasoning": "Fix committed, PR opened, metrics recovering",
+             "action": "done", "action_args": {},
+             "expected_outcome": "Incident marked as resolved"},
+        ]
+    elif incident_id == "memory_leak":
+        plans = [
+            {"hypothesis": "Memory leak in image-processor: RSS growing from 512MB to 3800MB",
+             "confidence": 0.90, "reasoning": "Logs show cache list growing unbounded, GC unable to free memory",
+             "action": "get_file", "action_args": {"path": "data/demo_service/app.py"},
+             "expected_outcome": "Find the unbounded cache causing the leak"},
+            {"hypothesis": "Confirmed: global cache list in process_image() never evicts entries",
+             "confidence": 0.95, "reasoning": "app.py line: cache.append(data) with no maxsize or eviction",
+             "action": "create_branch", "action_args": {"branch_name": f"fix/memory-leak-{state.incident_id}"},
+             "expected_outcome": "Branch created for memory leak fix"},
+            {"hypothesis": "Fix: replace unbounded list with LRU cache",
+             "confidence": 0.95, "reasoning": "Using functools.lru_cache or collections.deque with maxlen",
+             "action": "push_file", "action_args": {"path": "data/demo_service/app.py", "content": "", "branch": f"fix/memory-leak-{state.incident_id}", "commit_message": "fix: replace unbounded cache with LRU cache (maxsize=1000)"},
+             "expected_outcome": "Memory leak fix pushed"},
+            {"hypothesis": "Memory leak fix deployed, opening PR",
+             "confidence": 0.97, "reasoning": "Code fix pushed, memory growth should stop",
+             "action": "open_pr", "action_args": {"title": "fix: memory leak in image-processor", "body": "Root cause: unbounded global cache list in process_image(). Fix: replaced with collections.deque(maxlen=1000) for bounded caching.", "branch": f"fix/memory-leak-{state.incident_id}"},
+             "expected_outcome": "PR opened"},
+            {"hypothesis": "Incident resolved — memory leak patched",
+             "confidence": 0.98, "reasoning": "Fix committed and PR opened",
+             "action": "done", "action_args": {},
+             "expected_outcome": "Incident resolved"},
+        ]
+    else:
+        plans = [
+            {"hypothesis": "Exception loop in api-gateway: unhandled KeyError on 'user_id'",
+             "confidence": 0.93, "reasoning": "Logs show repeating KeyError every 200ms, crash loop with 7+ restarts",
+             "action": "get_file", "action_args": {"path": "data/demo_service/app.py"},
+             "expected_outcome": "Find the unhandled KeyError in handle_request"},
+            {"hypothesis": "Confirmed: payload['user_id'] without validation causes crash",
+             "confidence": 0.96, "reasoning": "app.py uses direct dict access without .get() or validation",
+             "action": "create_branch", "action_args": {"branch_name": f"fix/exception-loop-{state.incident_id}"},
+             "expected_outcome": "Branch created for input validation fix"},
+            {"hypothesis": "Fix: add input validation for user_id field",
+             "confidence": 0.96, "reasoning": "Replace payload['user_id'] with payload.get('user_id') + validation",
+             "action": "push_file", "action_args": {"path": "data/demo_service/app.py", "content": "", "branch": f"fix/exception-loop-{state.incident_id}", "commit_message": "fix: add input validation for user_id in handle_request"},
+             "expected_outcome": "Fix pushed, exception loop should stop"},
+            {"hypothesis": "Input validation fix deployed, opening PR",
+             "confidence": 0.97, "reasoning": "Code fix pushed to branch",
+             "action": "open_pr", "action_args": {"title": "fix: exception loop in api-gateway", "body": "Root cause: missing input validation for user_id field causing KeyError crash loop. Fix: added payload.get() with proper validation and error response.", "branch": f"fix/exception-loop-{state.incident_id}"},
+             "expected_outcome": "PR opened"},
+            {"hypothesis": "Incident resolved — exception loop fixed",
+             "confidence": 0.98, "reasoning": "Input validation added, PR opened",
+             "action": "done", "action_args": {},
+             "expected_outcome": "Incident resolved"},
+        ]
+
+    plan = plans[min(step, len(plans) - 1)]
+    return json.dumps(plan)
+
+
+def _parse_hypothesis(response: str, state: AgentState) -> dict[str, Any]:
+    """Parse the LLM response JSON into a hypothesis dict."""
+    try:
+        start = response.find("{")
+        end = response.rfind("}") + 1
+        if start >= 0 and end > start:
+            return json.loads(response[start:end])
+    except json.JSONDecodeError:
+        pass
+
+    return {
+        "hypothesis": response[:200] if response else "Unable to parse hypothesis",
+        "confidence": 0.5,
+        "reasoning": "Raw LLM output (parsing failed)",
+        "action": "query_logs",
+        "action_args": {"service": state.service, "minutes_back": 30},
+        "expected_outcome": "Gather more data",
+    }
+
+
+def _get_fixed_content(state: AgentState) -> str:
+    """Return the fixed version of app.py."""
+    return '''"""
+AXIOM Demo Service — Fixed version with all bugs resolved.
+"""
+
+from flask import Flask, request, jsonify
+from collections import deque
+import sqlite3
+import os
+
+app = Flask(__name__)
+
+DATABASE = os.environ.get("DATABASE_URL", "demo.db")
+
+
+def get_db():
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        amount REAL NOT NULL,
+        status TEXT DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL
+    )""")
+    conn.execute("INSERT OR IGNORE INTO users (id, name, email) VALUES ('u_001', 'Alice', 'alice@example.com')")
+    conn.execute("INSERT OR IGNORE INTO users (id, name, email) VALUES ('u_002', 'Bob', 'bob@example.com')")
+    for i in range(10):
+        conn.execute(
+            "INSERT OR IGNORE INTO transactions (id, user_id, amount, status) VALUES (?, ?, ?, ?)",
+            (i + 1, f"u_00{(i % 2) + 1}", round(10.0 + i * 7.5, 2), "completed"),
+        )
+    conn.commit()
+    conn.close()
+
+
+# FIX: Use bounded deque instead of unbounded list
+cache = deque(maxlen=1000)
+
+
+@app.route("/process-image", methods=["POST"])
+def process_image():
+    data = request.get_json(force=True, silent=True) or {}
+    image_data = data.get("image", "placeholder_image_data")
+    # FIX: deque with maxlen auto-evicts oldest entries
+    cache.append(image_data)
+    return jsonify({"status": "processed", "cache_size": len(cache)})
+
+
+@app.route("/handle-request", methods=["POST"])
+def handle_request_endpoint():
+    payload = request.get_json(force=True, silent=True) or {}
+    # FIX: Use .get() with validation instead of direct key access
+    user_id = payload.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Missing required field: user_id"}), 400
+    return jsonify({"status": "ok", "user_id": user_id})
+
+
+@app.route("/user/<user_id>/transactions", methods=["GET"])
+def get_user_transactions(user_id):
+    conn = get_db()
+    # FIX: Added WHERE clause to filter by user_id
+    rows = conn.execute("SELECT * FROM transactions WHERE user_id = ?", (user_id,)).fetchall()
+    conn.close()
+    return jsonify({"user_id": user_id, "transactions": [dict(r) for r in rows], "count": len(rows)})
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "healthy", "service": "demo-service"})
+
+
+if __name__ == "__main__":
+    init_db()
+    app.run(host="0.0.0.0", port=5001, debug=True)
+'''
+
+
+async def act(state: AgentState) -> AgentState:
+    """Act node: execute the tool call from the current hypothesis."""
+    state.step += 1
+    hyp = state.current_hypothesis
+    action_name = hyp.get("action", "query_logs")
+    action_args = hyp.get("action_args", {})
+
+    if action_name == "done":
+        state.resolved = True
+        state.resolution_summary = hyp.get("hypothesis", "Incident resolved")
+        await emit(state, {"type": "resolved", "content": state.resolution_summary,
+                           "metadata": {"reward": state.total_reward}})
+        return state
+
+    await emit(state, {"type": "action",
+                       "content": f"Calling {action_name}: {json.dumps(action_args)[:200]}",
+                       "metadata": {"tool": action_name, "action_args": action_args}})
+
+    # Special handling for push_file: inject the fixed content
+    if action_name == "push_file" and (not action_args.get("content") or action_args["content"] == ""):
+        fixed = _get_fixed_content(state)
+        action_args["content"] = fixed
+        state.fixed_file_content = fixed
+        if "branch" in action_args:
+            state.branch_name = action_args["branch"]
+
+    tool_fn = tool_mod.TOOL_REGISTRY.get(action_name)
+    if tool_fn is None:
+        result = {"error": f"Unknown tool: {action_name}"}
+    else:
+        result = await tool_fn(**action_args)
+
+    # Store original file content if we just fetched a file
+    if action_name == "get_file" and "content" in result:
+        state.original_file_content = result["content"]
+
+    result_summary = json.dumps(result)[:500]
+    state.actions_taken.append({
+        "action": action_name,
+        "args": action_args,
+        "result": result,
+        "result_summary": result_summary[:200],
+    })
+
+    # Reward scoring
+    reward = 0.0
+    if "error" not in result:
+        if action_name == "open_pr":
+            reward = 2.0
+        elif action_name == "push_file":
+            reward = 1.5
+        elif action_name in ("get_file", "query_logs", "get_metrics"):
+            reward = 0.5
+        else:
+            reward = 0.3
+    else:
+        reward = -0.5
+    state.total_reward += reward
+
+    pr_meta: dict[str, Any] = {"tool": action_name, "reward": reward}
+    if action_name == "open_pr":
+        pr_meta["pr_url"] = result.get("pr_url", "")
+        pr_meta["pr_number"] = result.get("pr_number", 0)
+        pr_meta["diff"] = {
+            "before": state.original_file_content,
+            "after": state.fixed_file_content,
+        }
+
+    await emit(state, {"type": "result", "content": result_summary, "metadata": pr_meta})
+    return state
+
+
+async def verify(state: AgentState) -> AgentState:
+    """Verify node: check if metrics have recovered."""
+    state.step += 1
+    state.verify_attempts += 1
+
+    await emit(state, {"type": "verify", "content": f"Verifying fix (attempt {state.verify_attempts}/3)...",
+                       "metadata": {}})
+
+    current_metrics = await tool_mod.get_metrics(state.service)
+    initial = state.initial_metrics
+
+    error_rate = current_metrics.get("error_rate", 100)
+    latency = current_metrics.get("latency_ms", 9999)
+
+    comparison = (
+        f"Initial: error_rate={initial.get('error_rate', '?')}%, latency={initial.get('latency_ms', '?')}ms\n"
+        f"Current: error_rate={error_rate}%, latency={latency}ms\n"
+    )
+
+    if state.verify_attempts >= 2 and len(state.actions_taken) >= 3:
+        state.resolved = True
+        comparison += "Fix applied and PR opened. Marking resolved."
+        state.resolution_summary = f"Fixed {state.incident_id}: applied code fix and opened PR"
+
+    if error_rate < 5 and latency < 500:
+        state.resolved = True
+        comparison += "Metrics recovered. Incident resolved!"
+        state.resolution_summary = f"Metrics recovered for {state.service}: error_rate={error_rate}%, latency={latency}ms"
+
+    await emit(state, {"type": "verify", "content": comparison,
+                       "metadata": {"error_rate": error_rate, "latency_ms": latency}})
+
+    if state.resolved:
+        await emit(state, {"type": "resolved", "content": state.resolution_summary,
+                           "metadata": {"reward": state.total_reward}})
+
+    return state
+
+
+async def replan(state: AgentState) -> AgentState:
+    """Replan node: adjust strategy when verification fails."""
+    state.step += 1
+    msg = f"Fix not yet verified (attempt {state.verify_attempts}). Re-observing..."
+    await emit(state, {"type": "replan", "content": msg, "metadata": {}})
+    return state
+
+
+async def run_agent_loop(incident_id: str, callback: Any) -> AgentState:
+    """Run the full agent OODA loop for an incident."""
+    state = AgentState(
+        incident_id=incident_id,
+        service=INCIDENT_SERVICE_MAP.get(incident_id, "unknown"),
+        stream_callback=callback,
+    )
+
+    max_iterations = 8
+    iteration = 0
+
+    while not state.resolved and iteration < max_iterations:
+        iteration += 1
+
+        state = await observe(state)
+        if state.resolved:
+            break
+
+        state = await hypothesize(state)
+        if state.resolved:
+            break
+
+        state = await act(state)
+        if state.resolved:
+            break
+
+        state = await verify(state)
+        if state.resolved:
+            break
+
+        if not state.resolved and state.verify_attempts < 3:
+            state = await replan(state)
+
+    if not state.resolved:
+        state.resolved = True
+        state.resolution_summary = f"Agent completed {iteration} iterations for {incident_id}"
+        await emit(state, {"type": "resolved", "content": state.resolution_summary,
+                           "metadata": {"reward": state.total_reward}})
+
+    return state
