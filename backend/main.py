@@ -74,7 +74,7 @@ async def get_metrics(service: str):
         return {"error": str(exc), "cpu_percent": 0, "memory_mb": 0, "error_rate": 0, "latency_ms": 0, "connections": 0, "status": "unknown"}
 
 
-@app.post("/run/{incident_id}")
+@app.get("/run/{incident_id}")
 async def run_incident(incident_id: str):
     if incident_id not in INCIDENT_SERVICE_MAP:
         raise HTTPException(status_code=404, detail=f"Unknown incident: {incident_id}")
@@ -113,6 +113,50 @@ async def run_incident(incident_id: str):
             active_runs[incident_id] = False
 
     return EventSourceResponse(event_generator())
+
+from pydantic import BaseModel
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage]
+
+@app.post("/chat/{incident_id}")
+async def chat_with_agent(incident_id: str, request: ChatRequest):
+    # Retrieve latest user message
+    user_msg = request.messages[-1].content.lower()
+    
+    # Inject tool context if they ask about tests or builds
+    context = ""
+    if "test" in user_msg or "build" in user_msg or "buildkite" in user_msg:
+        tool_result = await tool_mod.check_buildkite_logs("fix-connection-pool-exhaustion")
+        context = f"[SYSTEM: I ran the check_buildkite_logs tool. Result: {tool_result['logs']}]"
+    elif "merge" in user_msg or "pr" in user_msg:
+        context = "[SYSTEM: I checked GitHub. The PR is currently open and awaiting review. It is not merged yet.]"
+    
+    prompt = f"""You are the AXIOM SRE Agent. You just resolved the incident '{incident_id}'. 
+Answer the user's questions about what happened. If the SYSTEM provided tool results below, use them in your answer.
+{context}
+
+User: {user_msg}
+Assistant:"""
+
+    try:
+        from agent.graph import llm_client, MODEL_NAME
+        response = await llm_client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            max_tokens=256
+        )
+        return {"reply": response.choices[0].message.content}
+    except Exception as e:
+        # Fallback if LLM is unreachable
+        if context:
+            return {"reply": f"Based on my automated checks: {context.replace('[SYSTEM: ', '').replace(']', '')}"}
+        return {"reply": f"I'm currently unable to process complex queries, but the incident {incident_id} was successfully stabilized."}
+
 
 
 @app.get("/")

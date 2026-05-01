@@ -16,11 +16,38 @@ Always respond in this exact JSON format:
   "expected_outcome": "what you expect to happen after this action"
 }
 
-Available actions: run_command, get_file, list_files, create_branch, push_file, open_pr, query_logs, get_metrics, get_incident_history, done
+Available actions and their EXACT argument names:
+- query_logs: {"service": "string", "minutes_back": int}
+- get_metrics: {"service": "string"}  
+- get_incident_history: {"service": "string"}
+- get_file: {"path": "string"}   ← argument is 'path', NOT 'file'
+- list_files: {"directory": "string"}
+- create_branch: {"branch_name": "string"}
+- push_file: {"path": "string", "content": "string", "branch": "string", "commit_message": "string"}
+- open_pr: {"title": "string", "body": "string", "branch": "string"}
+- run_command: {"cmd": "string"}
+- check_buildkite_logs: {"branch": "string"}
+- done: {}
 
-Use done when: metrics have recovered AND a fix has been committed (if code change was needed).
-Never guess. Always query logs before acting.
-Never repeat the same action twice with the same arguments."""
+IMPORTANT FILE PATHS:
+- The demo service source code is at: data/demo_service/app.py
+- This file contains all 3 bugs for all 3 incident scenarios
+- Always use exactly this path when calling get_file or push_file
+
+CRITICAL WORKFLOW INSTRUCTIONS:
+1. First, `query_logs` to find the error.
+2. If the logs imply a code bug, use `get_file` to inspect the source code.
+3. If you find the bug, you MUST deploy a fix:
+   a. `create_branch` (e.g., fix-db-pool)
+   b. `push_file` with the ENTIRE fixed file content.
+   c. `open_pr`
+4. Only call `done` AFTER you have successfully opened a PR.
+
+WARNING:
+- NEVER call `get_file` on the same file twice. If you have the file content, you must immediately create a branch and push the fix!
+- Do not keep querying logs if you already know the problem.
+- Do not invent metric names.
+- If you repeat an action, you will fail the demo!"""
 
 
 INCIDENT_CONTEXT_TEMPLATE = """

@@ -28,6 +28,10 @@ def seed_db_if_empty():
     conn = get_db()
     c = conn.cursor()
 
+    c.execute("DROP TABLE IF EXISTS logs")
+    c.execute("DROP TABLE IF EXISTS metrics")
+    c.execute("DROP TABLE IF EXISTS incidents")
+
     c.execute("""CREATE TABLE IF NOT EXISTS logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp TEXT NOT NULL,
@@ -55,11 +59,6 @@ def seed_db_if_empty():
         description TEXT NOT NULL,
         resolution TEXT DEFAULT ''
     )""")
-
-    c.execute("SELECT COUNT(*) FROM logs")
-    if c.fetchone()[0] > 0:
-        conn.close()
-        return
 
     now = datetime.utcnow()
 
@@ -267,18 +266,32 @@ seed_db_if_empty()
 
 
 @mcp.tool()
-async def query_logs(service: str, minutes_back: int) -> dict[str, Any]:
-    """Query log entries for a service within a time window."""
+async def query_logs(service: str, minutes_back: int = 120, query: str = None, limit: int = 100, level: str = None) -> dict[str, Any]:
+    """Query log entries for a service within a time window with optional text filter."""
     try:
         conn = get_db()
         cutoff = (datetime.utcnow() - timedelta(minutes=minutes_back)).isoformat()
-        rows = conn.execute(
-            "SELECT timestamp, level, message, service FROM logs WHERE service = ? AND timestamp >= ? ORDER BY timestamp DESC LIMIT 100",
-            (service, cutoff)
-        ).fetchall()
+        
+        sql = "SELECT timestamp, level, message, service FROM logs WHERE service = ? AND timestamp >= ?"
+        params = [service, cutoff]
+        
+        if query:
+            sql += " AND message LIKE ?"
+            params.append(f"%{query}%")
+            
+        if level:
+            sql += " AND level = ?"
+            params.append(level.upper())
+            
+        sql += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+        
+        rows = conn.execute(sql, tuple(params)).fetchall()
         conn.close()
         return {"logs": [dict(r) for r in rows]}
     except Exception as exc:
+        import traceback
+        traceback.print_exc()
         return {"error": str(exc), "logs": []}
 
 
@@ -320,7 +333,20 @@ async def health(request):
     return JSONResponse({"status": "healthy", "service": "logdb"})
 
 
+@mcp.custom_route("/call-tool", methods=["POST"])
+async def call_tool(request):
+    from starlette.responses import JSONResponse
+    try:
+        data = await request.json()
+        tool_name = data.get("tool_name")
+        arguments = data.get("arguments", {})
+        result = await mcp.call_tool(tool_name, arguments)
+        return JSONResponse(result.model_dump())
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 if __name__ == "__main__":
     import uvicorn
     print("Starting AXIOM LogDB MCP Server on port 8002...")
-    uvicorn.run(mcp.get_app(), host="0.0.0.0", port=8002, log_level="info")
+    uvicorn.run(mcp.http_app(), host="0.0.0.0", port=8002, log_level="info")

@@ -97,13 +97,21 @@ async def health(request):
     return JSONResponse({"status": "healthy", "service": "terminal-sandbox"})
 
 
+@mcp.custom_route("/call-tool", methods=["POST"])
+async def call_tool(request):
+    from starlette.responses import JSONResponse
+    try:
+        data = await request.json()
+        tool_name = data.get("tool_name")
+        arguments = data.get("arguments", {})
+        result = await mcp.call_tool(tool_name, arguments)
+        return JSONResponse(result.model_dump())
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 if __name__ == "__main__":
     import uvicorn
 
     print("Starting AXIOM Terminal MCP Server on port 8001...")
-    uvicorn.run(
-        mcp.get_app(),
-        host="0.0.0.0",
-        port=8001,
-        log_level="info",
-    )
+    uvicorn.run(mcp.http_app(), host="0.0.0.0", port=8001, log_level="info")

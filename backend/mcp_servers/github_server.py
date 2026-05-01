@@ -7,30 +7,36 @@ import os
 from typing import Any
 
 from fastmcp import FastMCP
+from github import Auth
 from github import Github, GithubException
 
 mcp = FastMCP("AXIOM GitHub Server")
 
+# --- NEW: Load from .env ---
+from dotenv import load_dotenv
+load_dotenv()
+# ----------------------------
+
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "")
 
-_github_client: Github | None = None
+_github_client = Github(auth=Auth.Token(GITHUB_TOKEN))
 _repo = None
 
 
 def _connect():
     global _github_client, _repo
-    if _github_client is not None:
+    if _github_client is not None and _repo is not None:
         return _github_client, _repo
     try:
-        _github_client = Github(GITHUB_TOKEN)
-        _repo = _github_client.get_repo(GITHUB_REPO)
-        print(f"GitHub connected: {_repo.owner.login}/{_repo.name}")
+        if _github_client is None:
+            _github_client = Github(auth=Auth.Token(GITHUB_TOKEN))
+        if _repo is None:
+            _repo = _github_client.get_repo(GITHUB_REPO)
+            print(f"GitHub connected: {_repo.full_name}")
         return _github_client, _repo
     except Exception as exc:
         print(f"GitHub connection failed: {exc}")
-        _github_client = None
-        _repo = None
         return None, None
 
 
@@ -120,6 +126,13 @@ async def open_pr(title: str, body: str, branch: str) -> dict[str, Any]:
         _, repo = _connect()
         if repo is None:
             return {"error": "GitHub not connected", "success": False}
+        
+        # Check for existing PR
+        existing_prs = repo.get_pulls(state='open', head=f"{repo.owner.login}:{branch}")
+        if existing_prs.totalCount > 0:
+            pr = existing_prs[0]
+            return {"success": True, "pr_url": pr.html_url, "pr_number": pr.number, "message": "Pull request already exists"}
+
         pr = repo.create_pull(title=title, body=body, head=branch, base=repo.default_branch)
         return {"success": True, "pr_url": pr.html_url, "pr_number": pr.number}
     except GithubException as exc:
@@ -137,7 +150,20 @@ async def health(request):
     return JSONResponse({"status": "disconnected", "error": "GitHub not connected"}, status_code=503)
 
 
+@mcp.custom_route("/call-tool", methods=["POST"])
+async def call_tool(request):
+    from starlette.responses import JSONResponse
+    try:
+        data = await request.json()
+        tool_name = data.get("tool_name")
+        arguments = data.get("arguments", {})
+        result = await mcp.call_tool(tool_name, arguments)
+        return JSONResponse(result.model_dump())
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 if __name__ == "__main__":
     import uvicorn
     print("Starting AXIOM GitHub MCP Server on port 8003...")
-    uvicorn.run(mcp.get_app(), host="0.0.0.0", port=8003, log_level="info")
+    uvicorn.run(mcp.http_app(), host="0.0.0.0", port=8003, log_level="info")
