@@ -25,176 +25,200 @@ interface IncidentPanelProps {
   selectedIncident: string;
   onSelectIncident: (id: string) => void;
   onStartAgent: () => void;
+  onOpenChat: () => void;
   agentStatus: AgentStatus;
+  selectedEnv?: string;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
-const INCIDENTS: Incident[] = [
-  {
-    id: "db_cascade",
-    name: "Cascading DB Failure",
-    service: "payment-service",
-    description: "Connection pool exhausted → cascading 503s",
-    severity: "critical",
-    key_metric: "$4,200/min",
-  },
-  {
-    id: "memory_leak",
-    name: "Memory Leak",
-    service: "image-processor",
-    description: "RSS climbing unbounded toward OOM",
-    severity: "high",
-    key_metric: "$1,800/min",
-  },
-  {
-    id: "exception_loop",
-    name: "Exception Loop",
-    service: "api-gateway",
-    description: "KeyError crash loop every ~30s",
-    severity: "critical",
-    key_metric: "$7,500/min",
-  },
-];
 
-export default function IncidentPanel({
+const FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif';
+
+// Local cache for incident data fetched from the API
+let incidentCache: Record<string, Incident> | null = null;
+
+const FALLBACK_INCIDENTS: Record<string, Incident> = {
+  "db_cascade": { id: "db_cascade", name: "Cascading DB Failure", service: "payment-service", description: "Connection pool exhausted → cascading 503s", severity: "critical", key_metric: "$4,200/min" },
+  "memory_leak": { id: "memory_leak", name: "Memory Leak", service: "image-processor", description: "RSS climbing unbounded toward OOM", severity: "high", key_metric: "$1,800/min" },
+  "exception_loop": { id: "exception_loop", name: "Exception Loop", service: "api-gateway", description: "KeyError crash loop every ~30s", severity: "critical", key_metric: "$7,500/min" },
+};
+
+function MetricPill({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
+  return (
+    <div className="flex flex-col items-end gap-[2px]">
+      <span style={{ fontSize: 10, color: '#454A54', fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', fontFamily: FONT }}>
+        {label}
+      </span>
+      <span style={{ fontSize: 13, fontFamily: 'ui-monospace, "SF Mono", monospace', fontWeight: 500, color: alert ? '#E95460' : '#8A8F9A' }}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+export default function IncidentDetails({
   selectedIncident,
-  onSelectIncident,
   onStartAgent,
+  onOpenChat,
   agentStatus,
-}: IncidentPanelProps) {
+  selectedEnv = 'Production',
+}: Omit<IncidentPanelProps, 'onSelectIncident'>) {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
-  const selectedService =
-    INCIDENTS.find((i) => i.id === selectedIncident)?.service || "";
+  const [incidents, setIncidents] = useState<Record<string, Incident>>(incidentCache || FALLBACK_INCIDENTS);
+
+  // Fetch incidents from API and cache
+  useEffect(() => {
+    if (incidentCache) return;
+    const fetchIncidents = async () => {
+      try {
+        const res = await fetch(`${API_URL}/incidents`);
+        if (res.ok) {
+          const data = await res.json();
+          const map: Record<string, Incident> = {};
+          for (const inc of data.incidents) {
+            map[inc.id] = inc;
+          }
+          incidentCache = map;
+          setIncidents(map);
+        }
+      } catch {}
+    };
+    fetchIncidents();
+  }, []);
+
+  const incident = incidents[selectedIncident] || incidents["db_cascade"] || FALLBACK_INCIDENTS["db_cascade"];
+
 
   useEffect(() => {
-    if (!selectedService) return;
+    if (!incident) return;
     const fetchMetrics = async () => {
       try {
-        const res = await fetch(`${API_URL}/metrics/${selectedService}`);
-        if (res.ok) {
-          const data: Metrics = await res.json();
-          setMetrics(data);
-        }
-      } catch {
-        /* polling — silently retry */
-      }
+        const res = await fetch(`${API_URL}/metrics/${incident.service}`);
+        if (res.ok) setMetrics(await res.json());
+      } catch { }
     };
     fetchMetrics();
     const interval = setInterval(fetchMetrics, 2000);
     return () => clearInterval(interval);
-  }, [selectedService]);
+  }, [incident]);
+
+  const calculateCost = (incidentId: string, m: Metrics | null): string => {
+    if (!m) return incidents[incidentId]?.key_metric || "$0/min";
+    let base = 0, err = 0, lat = 0;
+    if (incidentId === "db_cascade") { base = 500; err = m.error_rate * 55; lat = (m.latency_ms / 100) * 25; }
+    else if (incidentId === "memory_leak") { base = 200; err = m.error_rate * 30; lat = (m.latency_ms / 100) * 15; }
+    else if (incidentId === "exception_loop") { base = 1200; err = m.error_rate * 85; lat = (m.latency_ms / 100) * 40; }
+    return `$${(base + err + lat).toLocaleString(undefined, { maximumFractionDigits: 0 })}/min`;
+  };
+
+  if (!incident) return null;
 
   return (
-    <aside className="w-[260px] flex flex-col linear-sidebar linear-border-r shrink-0 select-none">
-      
-      {/* Workspace / Context Switcher style header */}
-      <div className="px-4 py-3 border-b border-[var(--linear-border)]">
-        <h2 className="text-[13px] font-medium text-primary">Issues</h2>
-      </div>
-
-      {/* Navigation List */}
-      <div className="flex-1 overflow-y-auto py-2">
-        
-        {/* Section Header */}
-        <div className="px-4 py-1.5 flex items-center group cursor-pointer">
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="text-tertiary mr-1.5 transition-transform group-hover:text-secondary">
-            <path d="M6 12L10 8L6 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          <span className="text-[12px] font-medium text-tertiary group-hover:text-secondary transition-colors">Active Incidents</span>
-          <span className="ml-auto text-[11px] text-tertiary">{INCIDENTS.length}</span>
-        </div>
-
-        {/* List items */}
-        <div className="mt-1 space-y-0.5 px-2">
-          {INCIDENTS.map((incident) => {
-            const isSelected = selectedIncident === incident.id;
-            const severityIcon = incident.severity === "critical" 
-              ? <div className="w-2.5 h-2.5 rounded-[3px] bg-[#E95460] mr-2 shrink-0" />
-              : <div className="w-2.5 h-2.5 rounded-[3px] bg-[#F2C94C] mr-2 shrink-0" />;
-
-            return (
-              <button
-                key={incident.id}
-                onClick={() => onSelectIncident(incident.id)}
-                className={`w-full flex items-start text-left px-2 py-1.5 rounded-[6px] transition-colors ${
-                  isSelected ? "bg-[var(--linear-hover-active)]" : "hover:bg-[var(--linear-hover)]"
-                }`}
-              >
-                <div className="pt-1">
-                  {severityIcon}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-0.5">
-                    <span className={`text-[13px] truncate ${isSelected ? "text-primary" : "text-secondary"}`}>
-                      {incident.name}
-                    </span>
-                  </div>
-                  <div className="text-[12px] text-tertiary truncate">
-                    {incident.service}
-                  </div>
-                  {isSelected && (
-                    <div className="mt-2 mb-1 pl-0">
-                       <div className="text-[11px] text-tertiary leading-snug mb-1.5 whitespace-normal">
-                          {incident.description}
-                       </div>
-                       <div className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[11px] font-mono text-[#E95460] bg-[#E95460]/10 border border-[#E95460]/20">
-                         {incident.key_metric}
-                       </div>
-                    </div>
-                  )}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Live Metrics - Only visible when selected */}
-        {selectedIncident && metrics && (
-          <div className="mt-6 px-4">
-             <div className="text-[12px] font-medium text-tertiary mb-3">Service Metrics</div>
-             <div className="space-y-2">
-                <div className="flex justify-between items-center text-[12px]">
-                  <span className="text-secondary">CPU</span>
-                  <span className={`font-mono ${metrics.cpu_percent > 80 ? 'text-[#E95460]' : 'text-primary'}`}>{metrics.cpu_percent.toFixed(0)}%</span>
-                </div>
-                <div className="flex justify-between items-center text-[12px]">
-                  <span className="text-secondary">Memory</span>
-                  <span className={`font-mono ${metrics.memory_mb > 3000 ? 'text-[#E95460]' : 'text-primary'}`}>{metrics.memory_mb.toFixed(0)} MB</span>
-                </div>
-                <div className="flex justify-between items-center text-[12px]">
-                  <span className="text-secondary">Errors</span>
-                  <span className={`font-mono ${metrics.error_rate > 5 ? 'text-[#E95460]' : 'text-primary'}`}>{metrics.error_rate.toFixed(1)}%</span>
-                </div>
-                <div className="flex justify-between items-center text-[12px]">
-                  <span className="text-secondary">Latency</span>
-                  <span className={`font-mono ${metrics.latency_ms > 1000 ? 'text-[#E95460]' : 'text-primary'}`}>{metrics.latency_ms.toFixed(0)} ms</span>
-                </div>
-             </div>
+    <div
+      className="flex items-center justify-between px-6 py-[14px] shrink-0 select-none"
+      style={{
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        backgroundColor: 'rgba(10,11,13,0.5)',
+        fontFamily: FONT,
+      }}
+    >
+      {/* Left: incident info */}
+      <div className="flex flex-col gap-[4px]">
+        <div className="flex items-center gap-[10px]">
+          <div className="flex items-center gap-2 px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10">
+            <div className={`w-1.5 h-1.5 rounded-full ${selectedEnv === 'Production' ? 'bg-[#5E6AD2]' : 'bg-[#BF5AF2]'}`} />
+            <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest">{selectedEnv}</span>
           </div>
-        )}
+          <div className="w-[1px] h-3 bg-white/10" />
+          <div className={`w-[9px] h-[9px] rounded-full shrink-0 ${incident.severity === 'critical'
+            ? 'bg-[#E05252] shadow-[0_0_6px_rgba(224,82,82,0.5)]'
+            : 'bg-[#D4A843] shadow-[0_0_6px_rgba(212,168,67,0.4)]'
+            }`} />
+          <span style={{ fontSize: 15, fontWeight: 600, color: '#E8E9EB', letterSpacing: '-0.02em' }}>
+            {incident.name}
+          </span>
+          <span
+            className="px-[7px] py-[2px] rounded-[5px]"
+            style={{
+              fontSize: 11,
+              fontFamily: 'ui-monospace, "SF Mono", monospace',
+              color: '#8A8F9A',
+              backgroundColor: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.08)',
+            }}
+          >
+            {incident.service}
+          </span>
+        </div>
+        <span style={{ fontSize: 12, color: '#555B65', marginLeft: 19, letterSpacing: '0.01em' }}>
+          {incident.description}
+        </span>
       </div>
 
-      {/* Start Button */}
-      <div className="p-3 border-t border-[var(--linear-border)]">
+      {/* Center: metrics */}
+      {metrics && (
+        <div className="flex items-center gap-[24px]">
+          <MetricPill label="CPU / Mem"
+            value={`${metrics.cpu_percent?.toFixed(0)}%  ${metrics.memory_mb?.toFixed(0)}MB`}
+            alert={(metrics.cpu_percent ?? 0) > 80 || (metrics.memory_mb ?? 0) > 3000}
+          />
+          <MetricPill label="Err / Lat"
+            value={`${metrics.error_rate?.toFixed(1)}%  ${metrics.latency_ms?.toFixed(0)}ms`}
+            alert={(metrics.error_rate ?? 0) > 5 || (metrics.latency_ms ?? 0) > 1000}
+          />
+          <div
+            className="flex flex-col items-end gap-[2px] pl-[20px]"
+            style={{ borderLeft: '1px solid rgba(255,255,255,0.07)' }}
+          >
+            <span style={{ fontSize: 10, color: '#454A54', fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', fontFamily: FONT }}>
+              Downtime Cost
+            </span>
+            <span style={{ fontSize: 14, fontFamily: 'ui-monospace, "SF Mono", monospace', fontWeight: 600, color: '#E05252' }}>
+              {calculateCost(incident.id, metrics)}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Right: CTA */}
+      {agentStatus === "resolved" ? (
+        <button
+          onClick={onOpenChat}
+          className="flex items-center gap-[6px] px-[16px] py-[7px] rounded-[7px] transition-all"
+          style={{
+            fontSize: 13, fontWeight: 500, fontFamily: FONT, letterSpacing: '-0.01em',
+            backgroundColor: '#22C55E', color: '#fff', cursor: 'pointer',
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          Summarize in Chat
+        </button>
+      ) : (
         <button
           onClick={onStartAgent}
-          disabled={!selectedIncident || agentStatus === "running"}
-          className="w-full linear-btn-primary py-1.5 rounded-[6px] text-[13px] flex items-center justify-center gap-2 h-8"
+          disabled={agentStatus === "running"}
+          className="flex items-center gap-[6px] px-[16px] py-[7px] rounded-[7px] transition-all"
+          style={{
+            fontSize: 13, fontWeight: 500, fontFamily: FONT, letterSpacing: '-0.01em',
+            backgroundColor: agentStatus === "running" ? 'rgba(255,255,255,0.06)' : '#fff',
+            color: agentStatus === "running" ? '#555B65' : '#0A0B0D',
+            border: agentStatus === "running" ? '1px solid rgba(255,255,255,0.08)' : 'none',
+            cursor: agentStatus === "running" ? 'not-allowed' : 'pointer',
+          }}
         >
           {agentStatus === "running" ? (
             <>
-               <svg className="animate-spin-slow w-3.5 h-3.5 opacity-70" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
-                  <path d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" fill="currentColor" />
-               </svg>
-               Running...
+              <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+                <path d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" fill="currentColor" />
+              </svg>
+              Running...
             </>
-          ) : (
-            "Start Triage"
-          )}
+          ) : "Start Triage"}
         </button>
-      </div>
-    </aside>
+      )}
+
+    </div>
   );
 }

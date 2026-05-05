@@ -2,128 +2,75 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-  --linear-bg: #0E0F11;
-  --linear-sidebar: #17181B;
-  --linear-surface: #1E1F23;
-  --linear-border: #27282B;
-  --linear-border-light: #313236;
-  --linear-text: #EEEEEE;
-  --linear-muted: #8A8F98;
-  --linear-tertiary: #60646C;
-  --linear-hover: rgba(255, 255, 255, 0.04);
-  --linear-hover-active: rgba(255, 255, 255, 0.08);
+  --font-sans: 'DM Sans', sans-serif;
+  --font-display: 'Syne', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --linear-bg: #090909;
+  --linear-sidebar: #090909;
+  --linear-surface: #151619;
+  --linear-border: #1A1C1F;
+  --linear-border-light: #26272B;
+  --linear-text: #E2E3E5;
+  --linear-muted: #939496;
+  --linear-tertiary: #5E6066;
+  --linear-hover: #151619;
+  --linear-hover-active: #1A1C1F;
   --linear-accent: #5E6AD2;
-  
-  /* Status colors */
-  --linear-success: #34A853; /* A bit more muted green */
+  --linear-success: #34A853;
   --linear-warning: #F2C94C;
   --linear-error: #E95460;
 }
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 * {
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
-html, body {
-  height: 100%;
-  overflow: hidden;
-  background-color: var(--linear-bg);
-  color: var(--linear-text);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'DM Sans', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-/* Custom scrollbar - Linear style */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: transparent;
-  background-clip: padding-box;
-  border: 3px solid transparent;
-  border-radius: 9999px;
-}
-
-*:hover::-webkit-scrollbar-thumb {
-  background-color: var(--linear-border-light);
-  border: 3px solid transparent;
-  background-clip: padding-box;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background-color: var(--linear-muted);
-}
-
-/* Base utility classes */
-.linear-bg { background-color: var(--linear-bg); }
-.linear-sidebar { background-color: var(--linear-sidebar); }
-.linear-surface { background-color: var(--linear-surface); }
-.linear-border { border-color: var(--linear-border); }
-.linear-border-b { border-bottom: 1px solid var(--linear-border); }
-.linear-border-r { border-right: 1px solid var(--linear-border); }
-.linear-border-t { border-top: 1px solid var(--linear-border); }
-
-/* Typography */
-.text-primary { color: var(--linear-text); }
-.text-secondary { color: var(--linear-muted); }
-.text-tertiary { color: var(--linear-tertiary); }
-
-/* Buttons */
-.linear-btn {
-  background-color: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow-x: hidden;
+  background: var(--linear-bg);
   color: var(--linear-text);
-  transition: all 0.15s ease;
 }
 
-.linear-btn:hover:not(:disabled) {
-  background-color: rgba(255, 255, 255, 0.09);
-  border-color: rgba(255, 255, 255, 0.12);
+.linear-bg {
+  background-color: var(--linear-bg);
 }
 
-.linear-btn-primary {
-  background-color: var(--linear-text);
-  color: var(--linear-bg);
-  font-weight: 500;
-  transition: all 0.15s ease;
+.linear-text {
+  color: var(--linear-text);
 }
 
-.linear-btn-primary:hover:not(:disabled) {
-  background-color: #ffffff;
-  transform: translateY(-0.5px);
+.bg-linear-surface {
+  background-color: var(--linear-surface);
 }
 
-.linear-btn-primary:disabled {
-  background-color: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.3);
-  cursor: not-allowed;
+.border-linear {
+  border-color: var(--linear-border);
 }
 
-/* Animations */
-@keyframes pulse-subtle {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+.text-primary {
+  color: var(--linear-text);
 }
 
-.animate-pulse-subtle {
-  animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+.text-secondary {
+  color: var(--linear-muted);
 }
 
-@keyframes spin-slow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.animate-spin-slow {
-  animation: spin-slow 2s linear infinite;
+.text-tertiary {
+  color: var(--linear-tertiary);
 }

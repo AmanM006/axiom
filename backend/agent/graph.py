@@ -127,14 +127,22 @@ def _fallback_hypothesis(state: AgentState) -> str:
         plans = [
             {"hypothesis": "Connection pool exhausted on payment-service causing cascading 503 errors",
              "confidence": 0.92, "reasoning": "Logs show 200/200 connections active with timeouts climbing to 30s",
+             "action": "search_knowledge_base", "action_args": {"query": "connection pool exhaustion payment-service"},
+             "expected_outcome": "Find past incidents or runbooks related to connection pool issues"},
+            {"hypothesis": "Runbook found: need to check app.py for missing connection pool eviction policy",
+             "confidence": 0.95, "reasoning": "RAG search results suggest connection pool might be unbounded",
              "action": "get_file", "action_args": {"path": "data/demo_service/app.py"},
              "expected_outcome": "See the connection handling code to identify the bug"},
             {"hypothesis": "Connection pool has no eviction policy, confirmed in source code",
              "confidence": 0.95, "reasoning": "app.py shows unbounded cache list with no cleanup",
              "action": "create_branch", "action_args": {"branch_name": f"fix/db-cascade-{state.incident_id}"},
              "expected_outcome": "Branch created for the fix"},
+            {"hypothesis": "Preparing fix: reset connection pool, add LRU cache eviction",
+             "confidence": 0.95, "reasoning": "Performing pre-flight syntax validation on the proposed code change",
+             "action": "validate_syntax", "action_args": {"code": "FIX_CONTENT_PLACEHOLDER", "language": "python"},
+             "expected_outcome": "Syntax validated successfully"},
             {"hypothesis": "Fix ready: need to push corrected code with connection pool reset",
-             "confidence": 0.95, "reasoning": "Identified root cause, fix prepared",
+             "confidence": 0.95, "reasoning": "Syntax validation passed, pushing corrected code",
              "action": "push_file", "action_args": {"path": "data/demo_service/app.py", "content": "", "branch": f"fix/db-cascade-{state.incident_id}", "commit_message": "fix: reset connection pool, add LRU cache eviction"},
              "expected_outcome": "Fixed code pushed to branch"},
             {"hypothesis": "Fix deployed, opening PR for review",
@@ -150,14 +158,22 @@ def _fallback_hypothesis(state: AgentState) -> str:
         plans = [
             {"hypothesis": "Memory leak in image-processor: RSS growing from 512MB to 3800MB",
              "confidence": 0.90, "reasoning": "Logs show cache list growing unbounded, GC unable to free memory",
+             "action": "search_knowledge_base", "action_args": {"query": "memory leak image-processor cache"},
+             "expected_outcome": "Find past incidents related to memory leaks"},
+            {"hypothesis": "Past incident found: check app.py for unbounded global cache list",
+             "confidence": 0.95, "reasoning": "RAG search indicates global caches are a common leak source",
              "action": "get_file", "action_args": {"path": "data/demo_service/app.py"},
              "expected_outcome": "Find the unbounded cache causing the leak"},
             {"hypothesis": "Confirmed: global cache list in process_image() never evicts entries",
              "confidence": 0.95, "reasoning": "app.py line: cache.append(data) with no maxsize or eviction",
              "action": "create_branch", "action_args": {"branch_name": f"fix/memory-leak-{state.incident_id}"},
              "expected_outcome": "Branch created for memory leak fix"},
+            {"hypothesis": "Preparing fix: replace unbounded list with LRU cache",
+             "confidence": 0.95, "reasoning": "Performing pre-flight syntax validation on memory leak fix",
+             "action": "validate_syntax", "action_args": {"code": "FIX_CONTENT_PLACEHOLDER", "language": "python"},
+             "expected_outcome": "Syntax validated successfully"},
             {"hypothesis": "Fix: replace unbounded list with LRU cache",
-             "confidence": 0.95, "reasoning": "Using functools.lru_cache or collections.deque with maxlen",
+             "confidence": 0.95, "reasoning": "Syntax validation passed, pushing memory leak fix",
              "action": "push_file", "action_args": {"path": "data/demo_service/app.py", "content": "", "branch": f"fix/memory-leak-{state.incident_id}", "commit_message": "fix: replace unbounded cache with LRU cache (maxsize=1000)"},
              "expected_outcome": "Memory leak fix pushed"},
             {"hypothesis": "Memory leak fix deployed, opening PR",
@@ -173,14 +189,22 @@ def _fallback_hypothesis(state: AgentState) -> str:
         plans = [
             {"hypothesis": "Exception loop in api-gateway: unhandled KeyError on 'user_id'",
              "confidence": 0.93, "reasoning": "Logs show repeating KeyError every 200ms, crash loop with 7+ restarts",
+             "action": "search_knowledge_base", "action_args": {"query": "KeyError user_id api-gateway crash loop"},
+             "expected_outcome": "Find runbooks for unhandled exceptions"},
+            {"hypothesis": "Runbook found: need to add payload.get() validation",
+             "confidence": 0.95, "reasoning": "RAG search confirms missing input validation causes this loop",
              "action": "get_file", "action_args": {"path": "data/demo_service/app.py"},
              "expected_outcome": "Find the unhandled KeyError in handle_request"},
             {"hypothesis": "Confirmed: payload['user_id'] without validation causes crash",
              "confidence": 0.96, "reasoning": "app.py uses direct dict access without .get() or validation",
              "action": "create_branch", "action_args": {"branch_name": f"fix/exception-loop-{state.incident_id}"},
              "expected_outcome": "Branch created for input validation fix"},
+            {"hypothesis": "Preparing fix: add input validation for user_id field",
+             "confidence": 0.96, "reasoning": "Performing pre-flight syntax validation on exception fix",
+             "action": "validate_syntax", "action_args": {"code": "FIX_CONTENT_PLACEHOLDER", "language": "python"},
+             "expected_outcome": "Syntax validated successfully"},
             {"hypothesis": "Fix: add input validation for user_id field",
-             "confidence": 0.96, "reasoning": "Replace payload['user_id'] with payload.get('user_id') + validation",
+             "confidence": 0.96, "reasoning": "Syntax validation passed, pushing input validation fix",
              "action": "push_file", "action_args": {"path": "data/demo_service/app.py", "content": "", "branch": f"fix/exception-loop-{state.incident_id}", "commit_message": "fix: add input validation for user_id in handle_request"},
              "expected_outcome": "Fix pushed, exception loop should stop"},
             {"hypothesis": "Input validation fix deployed, opening PR",
@@ -307,6 +331,9 @@ if __name__ == "__main__":
 '''
 
 
+APPROVAL_EVENTS: dict[str, asyncio.Event] = {}
+APPROVAL_RESULTS: dict[str, bool] = {}
+
 async def act(state: AgentState) -> AgentState:
     """Act node: execute the tool call from the current hypothesis."""
     state.step += 1
@@ -333,11 +360,40 @@ async def act(state: AgentState) -> AgentState:
         if "branch" in action_args:
             state.branch_name = action_args["branch"]
 
-    tool_fn = tool_mod.TOOL_REGISTRY.get(action_name)
-    if tool_fn is None:
-        result = {"error": f"Unknown tool: {action_name}"}
+    # --- HITL Safety Guardrail ---
+    dangerous_actions = ["push_file", "create_branch", "open_pr", "run_command"]
+    is_approved = True
+    if action_name in dangerous_actions:
+        await emit(state, {
+            "type": "approval_required",
+            "content": f"Safety Guardrail: {action_name} requires human approval.",
+            "metadata": {"tool": action_name, "args": action_args}
+        })
+        
+        # Setup event
+        event = asyncio.Event()
+        APPROVAL_EVENTS[state.incident_id] = event
+        APPROVAL_RESULTS[state.incident_id] = False # Default to false
+        
+        # Wait for human input from the frontend via /approve endpoint
+        await event.wait()
+        
+        is_approved = APPROVAL_RESULTS.get(state.incident_id, False)
+        
+        # Cleanup
+        APPROVAL_EVENTS.pop(state.incident_id, None)
+        APPROVAL_RESULTS.pop(state.incident_id, None)
+
+    if not is_approved:
+        result = {"error": "Action explicitly denied by human operator due to safety guardrail."}
+        await emit(state, {"type": "action", "content": "Action denied.", "metadata": {"tool": action_name}})
     else:
-        result = await tool_fn(**action_args)
+        tool_fn = tool_mod.TOOL_REGISTRY.get(action_name)
+        if tool_fn is None:
+            result = {"error": f"Unknown tool: {action_name}"}
+        else:
+            # Pass session-specific config override if present
+            result = await tool_fn(**{**action_args, "session_config": state.config})
 
     # Store original file content if we just fetched a file
     if action_name == "get_file" and "content" in result:
@@ -440,12 +496,13 @@ async def replan(state: AgentState) -> AgentState:
     return state
 
 
-async def run_agent_loop(incident_id: str, callback: Any) -> AgentState:
+async def run_agent_loop(incident_id: str, callback: Any, config: dict[str, Any] = None) -> AgentState:
     """Run the full agent OODA loop for an incident."""
     state = AgentState(
         incident_id=incident_id,
         service=INCIDENT_SERVICE_MAP.get(incident_id, "unknown"),
         stream_callback=callback,
+        config=config or {},
     )
 
     max_iterations = 15

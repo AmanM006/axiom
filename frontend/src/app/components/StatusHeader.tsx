@@ -1,11 +1,16 @@
 "use client";
 
 import { AgentStatus } from "../hooks/useAgentStream";
+import React, { useState, useEffect } from 'react';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
 interface StatusHeaderProps {
   status: AgentStatus;
+  isPaused: boolean;
   elapsedMs: number;
   totalReward: number;
+  onOpenConfig?: () => void;
 }
 
 function formatTime(ms: number): string {
@@ -21,89 +26,97 @@ function formatCurrency(amount: number): string {
 
 const COST_PER_MINUTE = 4200;
 
-export default function StatusHeader({
-  status,
-  elapsedMs,
-  totalReward,
-}: StatusHeaderProps) {
+export default function StatusHeader({ status, isPaused, elapsedMs, totalReward, onOpenConfig }: StatusHeaderProps) {
+  const [globalHealth, setGlobalHealth] = useState<string>('healthy');
+
+  useEffect(() => {
+    const fetchHealth = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/v1/infrastructure/health`);
+        if (res.ok) {
+          const data = await res.json();
+          setGlobalHealth(data.status || 'healthy');
+        }
+      } catch {}
+    };
+    fetchHealth();
+    const interval = setInterval(fetchHealth, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   const elapsedSeconds = elapsedMs / 1000;
-  const costSaved =
-    status === "idle"
-      ? 0
-      : Math.floor((elapsedSeconds / 60) * COST_PER_MINUTE);
+  const costSaved = status === "idle" ? 0 : Math.floor((elapsedSeconds / 60) * COST_PER_MINUTE);
 
   return (
-    <header className="h-12 flex items-center justify-between px-4 linear-bg linear-border-b shrink-0 select-none">
-      {/* Left section: Branding & Workspace */}
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-[var(--linear-hover)] cursor-pointer transition-colors">
-          <div className="w-4 h-4 rounded-[3px] bg-white text-black flex items-center justify-center text-[10px] font-bold">
-            A
-          </div>
-          <span className="text-[13px] font-medium text-primary">AXIOM Workspace</span>
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-tertiary">
-            <path d="M4.5 6L8 9.5L11.5 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </div>
-        
-        <div className="h-3.5 w-px linear-bg linear-border-l border-[#27282B] mx-1" />
-
-        <div className="flex items-center gap-2">
-          <span className="text-[12px] text-secondary flex items-center gap-1.5 bg-[#17181B] border border-[#27282B] px-2 py-0.5 rounded-full">
-            <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" className="text-[#5E6AD2]">
-              <path d="M8 0L10.3 5.3L16 6.3L12 10.5L12.8 16L8 13.5L3.2 16L4 10.5L0 6.3L5.7 5.3L8 0Z" />
-            </svg>
-            MI300X
-          </span>
-        </div>
+    <header
+      className="h-11 flex items-center justify-between px-4 shrink-0 select-none relative"
+      style={{
+        backgroundColor: 'rgba(10, 11, 13, 0.7)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif',
+      }}
+    >
+      {/* Left: Global Health */}
+      <div className="flex items-center gap-3 w-[200px]">
+        <div className={`w-2 h-2 rounded-full ${globalHealth === 'healthy' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : globalHealth === 'warning' ? 'bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.4)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)] animate-pulse'}`} />
+        <span className="text-[11px] font-bold text-white/30 uppercase tracking-widest whitespace-nowrap">
+          System: <span className={globalHealth === 'healthy' ? 'text-green-500/80' : globalHealth === 'warning' ? 'text-yellow-500/80' : 'text-red-500/80'}>{globalHealth}</span>
+        </span>
       </div>
 
-      {/* Center section: Status */}
-      <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
-        {status === "running" && (
-          <div className="w-2 h-2 rounded-full bg-[#F2C94C] animate-pulse-subtle" />
-        )}
-        {status === "resolved" && (
-          <div className="w-2 h-2 rounded-full bg-[#34A853]" />
-        )}
-        {status === "error" && (
-          <div className="w-2 h-2 rounded-full bg-[#E95460]" />
-        )}
-        {status === "idle" && (
-          <div className="w-2 h-2 rounded-full border border-[#60646C]" />
-        )}
-        <span className="text-[13px] text-secondary font-medium">
+      {/* Center: Status */}
+      <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-[7px]">
+        {isPaused && <div className="w-[7px] h-[7px] rounded-full bg-[#E95460] animate-pulse" />}
+        {!isPaused && status === "running" && <div className="w-[7px] h-[7px] rounded-full bg-[#F2C94C] animate-pulse" />}
+        {status === "resolved" && <div className="w-[7px] h-[7px] rounded-full bg-[#34A853]" />}
+        {status === "error" && <div className="w-[7px] h-[7px] rounded-full bg-[#E95460]" />}
+        {status === "idle" && <div className="w-[7px] h-[7px] rounded-full" style={{ border: '1px solid #555B65' }} />}
+        <span style={{ fontSize: 13, fontWeight: 500, color: isPaused ? '#E95460' : '#8A8F9A', letterSpacing: '-0.01em' }}>
           {status === "idle" && "Ready"}
-          {status === "running" && "Diagnosing..."}
+          {isPaused ? "Awaiting Approval" : (status === "running" ? "Diagnosing..." : "")}
           {status === "resolved" && "Resolved"}
           {status === "error" && "Error"}
         </span>
       </div>
 
-      {/* Right section: Metrics */}
-      <div className="flex items-center gap-4">
+      {/* Right: Metrics & Config */}
+      <div className="flex items-center gap-[20px]">
         {(status === "running" || status === "resolved") && (
-          <div className="flex items-center gap-2">
-            <span className="text-[12px] text-tertiary font-medium">Saved</span>
-            <span className="text-[13px] text-[#34A853] font-mono font-medium">
+          <div className="flex items-center gap-[6px]">
+            <span style={{ fontSize: 12, color: '#555B65', fontWeight: 500 }}>Saved</span>
+            <span style={{ fontSize: 13, color: '#34A853', fontFamily: 'ui-monospace, "SF Mono", monospace', fontWeight: 500 }}>
               {formatCurrency(costSaved)}
             </span>
           </div>
         )}
-        
-        <div className="flex items-center gap-2">
-          <span className="text-[12px] text-tertiary font-medium">Time</span>
-          <span className="text-[13px] text-primary font-mono font-medium w-[42px]">
+        <div className="flex items-center gap-[6px]">
+          <span style={{ fontSize: 12, color: '#555B65', fontWeight: 500 }}>Time</span>
+          <span style={{ fontSize: 13, color: '#E0E1E4', fontFamily: 'ui-monospace, "SF Mono", monospace', fontWeight: 500, width: 40 }}>
             {formatTime(elapsedMs)}
           </span>
         </div>
-        
-        <div className="flex items-center gap-2">
-          <span className="text-[12px] text-tertiary font-medium">Score</span>
-          <span className={`text-[13px] font-mono font-medium ${totalReward >= 0 ? "text-primary" : "text-[#E95460]"}`}>
+        <div className="flex items-center gap-[6px]">
+          <span style={{ fontSize: 12, color: '#555B65', fontWeight: 500 }}>Score</span>
+          <span style={{
+            fontSize: 13,
+            fontFamily: 'ui-monospace, "SF Mono", monospace',
+            fontWeight: 500,
+            color: totalReward >= 0 ? '#E0E1E4' : '#E95460',
+          }}>
             {totalReward >= 0 ? "+" : ""}{totalReward.toFixed(1)}
           </span>
         </div>
+        
+        {/* Settings Gear */}
+        <button 
+          onClick={onOpenConfig}
+          className="ml-2 p-1.5 rounded-md hover:bg-white/5 text-white/40 hover:text-white transition-colors"
+          title="Configure Environment"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
       </div>
     </header>
   );

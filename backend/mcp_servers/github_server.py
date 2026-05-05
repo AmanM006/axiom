@@ -150,6 +150,23 @@ async def health(request):
     return JSONResponse({"status": "disconnected", "error": "GitHub not connected"}, status_code=503)
 
 
+def _get_repo_for_session(session_config: dict[str, Any] = None):
+    """Helper to get a GitHub repo instance, optionally overridden by session config."""
+    token = (session_config or {}).get("GITHUB_TOKEN") or GITHUB_TOKEN
+    repo_name = (session_config or {}).get("GITHUB_REPO") or GITHUB_REPO
+    
+    if not token or not repo_name:
+        return None, None
+        
+    try:
+        gh = Github(auth=Auth.Token(token))
+        repo = gh.get_repo(repo_name)
+        return gh, repo
+    except Exception as e:
+        print(f"Session GitHub connection failed: {e}")
+        return None, None
+
+
 @mcp.custom_route("/call-tool", methods=["POST"])
 async def call_tool(request):
     from starlette.responses import JSONResponse
@@ -157,6 +174,15 @@ async def call_tool(request):
         data = await request.json()
         tool_name = data.get("tool_name")
         arguments = data.get("arguments", {})
+        session_config = data.get("session_config", {})
+        
+        # Inject repo override into tools if needed, 
+        # but since tools call _connect(), we'll use a thread-local or a context var.
+        # For simplicity in this demo, we'll just modify the tools to accept an optional repo.
+        
+        # Actually, let's just re-implement the tool logic here or modify the tools.
+        # Better: let's modify the tools to accept an optional 'session_config' argument.
+        
         result = await mcp.call_tool(tool_name, arguments)
         return JSONResponse(result.model_dump())
     except Exception as e:

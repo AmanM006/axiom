@@ -24,3 +24,4 @@ class AgentState:
     original_file_content: str = ""
     fixed_file_content: str = ""
     branch_name: str = ""
+    config: dict[str, Any] = field(default_factory=dict)

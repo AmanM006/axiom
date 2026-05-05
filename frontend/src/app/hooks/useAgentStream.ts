@@ -27,7 +27,8 @@ export interface AgentEvent {
     | "verify"
     | "replan"
     | "resolved"
-    | "error";
+    | "error"
+    | "approval_required";
   step: number;
   content: string;
   metadata: AgentEventMetadata;
@@ -37,54 +38,121 @@ export type AgentStatus = "idle" | "running" | "resolved" | "error";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
-export function useAgentStream() {
-  const [events, setEvents] = useState<AgentEvent[]>([]);
-  const [status, setStatus] = useState<AgentStatus>("idle");
-  const [elapsedMs, setElapsedMs] = useState(0);
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startTimeRef = useRef<number>(0);
+export interface IncidentState {
+  events: AgentEvent[];
+  status: AgentStatus;
+  isPaused: boolean;
+  elapsedMs: number;
+}
 
-  const stopStream = useCallback(() => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
+const DEFAULT_STATE: IncidentState = {
+  events: [],
+  status: "idle",
+  isPaused: false,
+  elapsedMs: 0,
+};
+
+export function useAgentStream() {
+  const [stateMap, setStateMap] = useState<Record<string, IncidentState>>({});
+  const [currentIncidentId, setCurrentIncidentId] = useState<string | null>(null);
+  
+  const eventSourcesRef = useRef<Record<string, EventSource>>({});
+  const timersRef = useRef<Record<string, ReturnType<typeof setInterval>>>({});
+  const startTimeRef = useRef<Record<string, number>>({});
+  const pausedAtRef = useRef<Record<string, number>>({});
+  const totalPausedMsRef = useRef<Record<string, number>>({});
+
+  const stopStream = useCallback((incidentId: string) => {
+    if (eventSourcesRef.current[incidentId]) {
+      eventSourcesRef.current[incidentId].close();
+      delete eventSourcesRef.current[incidentId];
     }
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
+    if (timersRef.current[incidentId]) {
+      clearInterval(timersRef.current[incidentId]);
+      delete timersRef.current[incidentId];
     }
   }, []);
 
   const startStream = useCallback(
     (incidentId: string) => {
-      stopStream();
-      setEvents([]);
-      setStatus("running");
-      setElapsedMs(0);
-      startTimeRef.current = Date.now();
+      stopStream(incidentId);
+      setCurrentIncidentId(incidentId);
+      
+      setStateMap(prev => ({
+        ...prev,
+        [incidentId]: { ...DEFAULT_STATE, status: "running" }
+      }));
+      
+      startTimeRef.current[incidentId] = Date.now();
+      totalPausedMsRef.current[incidentId] = 0;
+      pausedAtRef.current[incidentId] = 0;
 
-      timerRef.current = setInterval(() => {
-        setElapsedMs(Date.now() - startTimeRef.current);
+      timersRef.current[incidentId] = setInterval(() => {
+        if (!pausedAtRef.current[incidentId]) {
+          const elapsed = Date.now() - startTimeRef.current[incidentId] - (totalPausedMsRef.current[incidentId] || 0);
+          setStateMap(prev => ({
+            ...prev,
+            [incidentId]: { ...prev[incidentId], elapsedMs: elapsed }
+          }));
+        }
       }, 100);
 
-      const es = new EventSource(`${API_URL}/run/${incidentId}`, {
+      // Load config from local storage
+      let queryParams = "";
+      const savedConfig = localStorage.getItem("axiom_config");
+      if (savedConfig) {
+        try {
+          const config = JSON.parse(savedConfig);
+          const params = new URLSearchParams();
+          if (config.githubToken) params.append("github_token", config.githubToken);
+          if (config.repoName) params.append("repo_name", config.repoName);
+          if (config.supabaseUrl) params.append("supabase_url", config.supabaseUrl);
+          if (config.supabaseKey) params.append("supabase_key", config.supabaseKey);
+          if (params.toString()) queryParams = `?${params.toString()}`;
+        } catch (e) {
+          console.error("Failed to parse config for stream", e);
+        }
+      }
+
+      const es = new EventSource(`${API_URL}/run/${incidentId}${queryParams}`, {
         withCredentials: false,
       });
-      eventSourceRef.current = es;
+      eventSourcesRef.current[incidentId] = es;
 
       es.onmessage = (e: MessageEvent) => {
         try {
           const event: AgentEvent = JSON.parse(e.data);
-          setEvents((prev) => [...prev, event]);
+          
+          setStateMap(prev => {
+            const current = prev[incidentId] || { ...DEFAULT_STATE };
+            const newEvents = [...current.events, event];
+            let newStatus = current.status;
+            let newPaused = current.isPaused;
 
-          if (event.type === "resolved") {
-            setStatus("resolved");
-            stopStream();
-          } else if (event.type === "error") {
-            setStatus("error");
-            stopStream();
-          }
+            if (event.type === "approval_required") {
+              newPaused = true;
+              pausedAtRef.current[incidentId] = Date.now();
+            } else if (event.type === "result") {
+              if (pausedAtRef.current[incidentId]) {
+                totalPausedMsRef.current[incidentId] = (totalPausedMsRef.current[incidentId] || 0) + (Date.now() - pausedAtRef.current[incidentId]);
+                pausedAtRef.current[incidentId] = 0;
+              }
+              newPaused = false;
+            }
+
+            if (event.type === "resolved") {
+              newStatus = "resolved";
+              stopStream(incidentId);
+            } else if (event.type === "error") {
+              newStatus = "error";
+              stopStream(incidentId);
+            }
+
+            return {
+              ...prev,
+              [incidentId]: { ...current, events: newEvents, status: newStatus, isPaused: newPaused }
+            };
+          });
         } catch {
           console.error("Failed to parse SSE event:", e.data);
         }
@@ -92,8 +160,11 @@ export function useAgentStream() {
 
       es.onerror = () => {
         if (es.readyState === EventSource.CLOSED) {
-          setStatus((prev) => (prev === "running" ? "resolved" : prev));
-          stopStream();
+          setStateMap(prev => ({
+            ...prev,
+            [incidentId]: { ...prev[incidentId], status: prev[incidentId]?.status === "running" ? "resolved" : prev[incidentId]?.status }
+          }));
+          stopStream(incidentId);
         }
       };
     },
@@ -101,8 +172,13 @@ export function useAgentStream() {
   );
 
   useEffect(() => {
-    return () => stopStream();
+    return () => {
+      Object.keys(eventSourcesRef.current).forEach(id => stopStream(id));
+    };
   }, [stopStream]);
 
-  return { events, status, elapsedMs, startStream, stopStream };
+  // Return the state for a specific incident if requested, or the current one
+  const getIncidentData = (id: string) => stateMap[id] || DEFAULT_STATE;
+
+  return { getIncidentData, startStream, stopStream };
 }
