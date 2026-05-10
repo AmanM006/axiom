@@ -31,6 +31,7 @@ export default function DashboardPage() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [showPR, setShowPR] = useState(true);
+  const [autoSendQuery, setAutoSendQuery] = useState<string | null>(null);
   
   const { getIncidentData, startStream } = useAgentStream();
   const { events, status, isPaused, elapsedMs } = getIncidentData(selectedIncident);
@@ -120,14 +121,17 @@ export default function DashboardPage() {
               <IncidentDetails
                 selectedIncident={selectedIncident}
                 onStartAgent={handleStartAgent}
-                onOpenChat={() => setActiveMainTab('chats')}
+                onOpenChat={(query) => {
+                  setActiveMainTab('chats');
+                  if (query) setAutoSendQuery(query);
+                }}
                 agentStatus={status}
                 selectedEnv={selectedEnv}
               />
               <div className="flex flex-1 overflow-hidden">
                 <ReasoningTrace events={events} />
                 <div className="w-[380px] flex flex-col border-l border-[var(--linear-border)] bg-[var(--linear-bg)] overflow-hidden">
-                  <ActionLog events={events} incidentId={selectedIncident} />
+                  <ActionLog events={events} incidentId={selectedIncident} onOpenPR={() => setShowPR(true)} />
                 </div>
               </div>
             </div>
@@ -152,6 +156,8 @@ export default function DashboardPage() {
                 onStartTriage={handleChatTriage}
                 agentEvents={events}
                 agentStatus={status}
+                autoQuery={autoSendQuery}
+                onQueryHandled={() => setAutoSendQuery(null)}
               />
             </div>
           </div>

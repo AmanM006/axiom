@@ -24,6 +24,7 @@ interface Message {
   content: string;
   eventType?: string; // For agent events: hypothesis, action, result, resolved
   confidence?: number;
+  step?: number;
 }
 
 interface ChatPanelProps {
@@ -34,6 +35,8 @@ interface ChatPanelProps {
   agentEvents: AgentEvent[];
   agentStatus: AgentStatus;
   onChatStarted?: (id: string) => void;
+  autoQuery?: string | null;
+  onQueryHandled?: () => void;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
@@ -476,7 +479,7 @@ function InputBox({
 // ── Main Component ─────────────────────────────────────────────────────────────
 
 export default function ChatPanel({ 
-  incidentId, activeMainTab, onNewChat, onStartTriage, agentEvents, agentStatus, onChatStarted 
+  incidentId, activeMainTab, onNewChat, onStartTriage, agentEvents, agentStatus, onChatStarted, autoQuery, onQueryHandled
 }: ChatPanelProps) {
   const [sessions, setSessions] = useState<Record<string, Message[]>>({});
   const [input, setInput] = useState("");
@@ -486,6 +489,11 @@ export default function ChatPanel({
   const [activeIncidents, setActiveIncidents] = useState<{ id: string; name: string; service: string }[]>([]);
   const [isTriageRunning, setIsTriageRunning] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+
+  const messages: Message[] = activeSession ? (sessions[activeSession] ?? []) : [];
+  const meta = activeSession ? (INCIDENT_META[activeSession] || DEFAULT_META) : DEFAULT_META;
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const isInitial = !historyLoading && messages.length === 0;
 
   const fetchIncidents = useCallback(() => {
     fetch(`${API_URL}/incidents`)
@@ -510,7 +518,11 @@ export default function ChatPanel({
     if (incidentId) setActiveSession(incidentId);
   }, [incidentId]);
 
-  const [historyLoading, setHistoryLoading] = useState(false);
+  // Auto-scroll to bottom of chat
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages.length, isLoading]);
+
 
   useEffect(() => {
     if (!activeSession) return;
@@ -543,9 +555,6 @@ export default function ChatPanel({
       .finally(() => setHistoryLoading(false));
   }, [activeSession]);
 
-  const messages: Message[] = activeSession ? (sessions[activeSession] ?? []) : [];
-  const meta = activeSession ? (INCIDENT_META[activeSession] || DEFAULT_META) : DEFAULT_META;
-  const isInitial = !historyLoading && messages.length === 0;
 
   const pushMessage = useCallback((sessionId: string, msg: Message) => {
     setSessions(prev => ({
@@ -557,12 +566,12 @@ export default function ChatPanel({
     localStorage.setItem(`axiom_history_${sessionId}`, JSON.stringify([...local, { ...msg, timestamp: new Date().toISOString() }]));
   }, []);
 
-  const handleApprove = useCallback(async (sessionId: string, approved: boolean) => {
+  const handleApprove = useCallback(async (sessionId: string, approved: boolean, step: number) => {
     try {
       await fetch(`${API_URL}/api/v1/incidents/${sessionId}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approved }),
+        body: JSON.stringify({ approved, step }),
       });
       pushMessage(sessionId, { role: 'system', content: `Decision: ${approved ? 'APPROVED' : 'DENIED'}`, eventType: 'result' });
     } catch (err) {
@@ -603,11 +612,12 @@ export default function ChatPanel({
             const ev = JSON.parse(dataStr);
             if (!ev.type || !ev.content) continue;
             if (ev.type === 'hypothesis' && ev.metadata?.streaming && !ev.metadata?.complete) continue;
+            if (ev.type === 'report') continue;
             const content = ev.type === 'hypothesis' && ev.metadata?.complete
               ? (ev.metadata?.parsed?.hypothesis || ev.content)
               : ev.content;
             if (!content) continue;
-            pushMessage(sessionId, { role: 'system', content, eventType: ev.type, confidence: ev.metadata?.confidence });
+            pushMessage(sessionId, { role: 'system', content, eventType: ev.type, confidence: ev.metadata?.confidence, step: ev.step });
             if (ev.type === 'resolved') {
               // Mark incident resolved on backend
               fetch(`${API_URL}/incidents/${sessionId}/resolve`, {
@@ -642,6 +652,11 @@ export default function ChatPanel({
     const stored = JSON.parse(localStorage.getItem('axiom_chats') || '[]');
     if (!stored.includes(sessionId)) {
       localStorage.setItem('axiom_chats', JSON.stringify([...stored, sessionId]));
+    }
+
+    // Handle autoQuery callback
+    if (autoQuery && onQueryHandled) {
+      onQueryHandled();
     }
 
     // 1. Check for agent trigger commands (client-side fast path)
@@ -790,6 +805,12 @@ export default function ChatPanel({
     onNewChat();
   };
 
+  useEffect(() => {
+    if (autoQuery && !isLoading) {
+      handleSend(autoQuery);
+    }
+  }, [autoQuery, isLoading, handleSend]);
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -875,11 +896,11 @@ export default function ChatPanel({
                     <AgentEventBubble
                       event={{
                         type: msg.eventType as AgentEvent['type'],
-                        step: 0,
+                        step: msg.step ?? 0,
                         content: msg.content,
                         metadata: { confidence: msg.confidence, complete: true },
                       }}
-                      onApprove={(approved) => handleApprove(activeSession!, approved)}
+                      onApprove={(approved) => handleApprove(activeSession!, approved, msg.step ?? 0)}
                     />
                   </div>
                 );

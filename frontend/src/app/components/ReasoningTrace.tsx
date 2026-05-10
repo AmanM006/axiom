@@ -101,6 +101,7 @@ export default function ReasoningTrace({ events }: ReasoningTraceProps) {
     let currentHypothesis = "";
 
     for (const event of events) {
+      if (event.type === "report") continue;
       if (
         event.type === "hypothesis" &&
         event.metadata.streaming &&
@@ -148,7 +149,10 @@ export default function ReasoningTrace({ events }: ReasoningTraceProps) {
 
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: "smooth"
+      });
     }
   }, [groupedSteps]);
 

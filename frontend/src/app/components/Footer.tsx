@@ -13,15 +13,15 @@ export default function Footer() {
     return (
         <>
             {/* CTA Section */}
-            <section className="relative bg-[#070B1A] py-24 px-6 overflow-hidden">
+            <section className="relative bg-[#040710] py-24 px-6 overflow-hidden">
                 {/* Ambient glows */}
                 <div className="absolute inset-0 pointer-events-none">
-                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[70vw] h-[30vh] bg-blue-900/15 rounded-full blur-[100px]" />
-                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[50vw] h-[20vh] bg-indigo-900/15 rounded-full blur-[80px]" />
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[70vw] h-[30vh] bg-[#2d5ce9]/10 rounded-full blur-[100px]" />
+                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[50vw] h-[20vh] bg-[#4b7bf5]/10 rounded-full blur-[80px]" />
                 </div>
 
                 <div className="relative z-10 max-w-7xl mx-auto">
-                    <span className="text-[9px] font-bold tracking-[0.25em] text-blue-400/60 uppercase mb-12 block">
+                    <span className="text-[9px] font-bold tracking-[0.25em] text-[#4b7bf5]/60 uppercase mb-12 block">
                         — START NOW —
                     </span>
 
@@ -34,10 +34,10 @@ export default function Footer() {
                         >
                             <h2 className="text-4xl sm:text-5xl font-medium text-white leading-[1.1] tracking-tight mb-5">
                                 Join the{" "}
-                                <span className="italic font-light text-blue-300">revolution</span>
+                                <span className="italic font-light text-[#4b7bf5]">revolution</span>
                             </h2>
                             <p className="text-[14px] text-slate-400 max-w-lg leading-relaxed">
-                                AXIOM V1 isn't just a model — it's a movement. Development teams worldwide are building on AXIOM, with 2.5M+ downloads on Hugging Face. Be part of the future of autonomous infrastructure.
+                                AXIOM V1 isn't just a model — it's a movement. Engineering teams worldwide are deploying autonomous SRE. Be part of the future of infrastructure reliability.
                             </p>
                         </motion.div>
 
@@ -47,7 +47,7 @@ export default function Footer() {
                             viewport={{ once: true }}
                             transition={{ duration: 0.7, delay: 0.2 }}
                         >
-                            <button className="flex items-center gap-3 bg-white text-[#070B1A] hover:bg-blue-50 transition-colors font-bold text-sm tracking-[0.08em] px-8 py-4 rounded-full">
+                            <button className="flex items-center gap-3 bg-gradient-to-r from-[#2d5ce9] to-[#4b7bf5] hover:opacity-90 text-white transition-all font-bold text-sm tracking-[0.08em] px-8 py-4 rounded-full shadow-[0_0_20px_rgba(75,123,245,0.3)] hover:shadow-[0_0_30px_rgba(75,123,245,0.5)] hover:-translate-y-0.5">
                                 START NOW
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="m5 12h14m-7-7 7 7-7 7" />

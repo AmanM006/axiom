@@ -23,7 +23,7 @@ def get_db():
     return conn
 
 
-def seed_db_if_empty():
+def seed_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = get_db()
     c = conn.cursor()
@@ -124,7 +124,7 @@ def seed_db_if_empty():
         frac = i / 19.0
         c.execute("INSERT INTO metrics (timestamp, service, cpu_percent, memory_mb, error_rate, latency_ms, connections, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                   (t.isoformat(), svc1,
-                   35 + frac * 50,
+                   17 + frac * 50,
                    512 + frac * 1600,
                    0 + frac * 67,
                    120 + frac * 4380,
@@ -262,7 +262,7 @@ def seed_db_if_empty():
     print(f"Database seeded with 3 incident scenarios at {DB_PATH}")
 
 
-seed_db_if_empty()
+seed_db()
 
 
 @mcp.tool()

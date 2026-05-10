@@ -32,7 +32,7 @@ export default function Advantages() {
             className="relative overflow-hidden"
             style={{ background: "linear-gradient(to bottom, #F4F7FC 0%, #E8EDF7 30%, #c5cde0 52%, #1a2040 65%, #070B1A 100%)" }}
         >
-            {/* Fluid dark blob that bleeds up from below — matching the screenshot */}
+            {/* Fluid dark blob that bleeds up from below */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden">
                 <div
                     className="absolute"
@@ -42,7 +42,7 @@ export default function Advantages() {
                         transform: "translateX(-50%)",
                         width: "180vw",
                         height: "80vh",
-                        background: "#0A0F24",
+                        background: "#050B14",
                         borderRadius: "50%",
                         filter: "blur(60px)",
                     }}
@@ -54,7 +54,7 @@ export default function Advantages() {
                         left: "5%",
                         width: "90vw",
                         height: "60vh",
-                        background: "rgba(7,10,38,0.9)",
+                        background: "rgba(45,92,233,0.15)",
                         borderRadius: "50%",
                         filter: "blur(80px)",
                     }}
@@ -66,14 +66,14 @@ export default function Advantages() {
                         right: "2%",
                         width: "70vw",
                         height: "60vh",
-                        background: "rgba(5,8,32,0.85)",
+                        background: "rgba(75,123,245,0.1)",
                         borderRadius: "50%",
                         filter: "blur(90px)",
                     }}
                 />
                 <div
                     className="absolute bottom-0 left-0 right-0"
-                    style={{ height: "45%", background: "#070B1A" }}
+                    style={{ height: "45%", background: "#040710" }}
                 />
             </div>
 
@@ -152,20 +152,31 @@ export default function Advantages() {
                                     className="w-full flex items-center justify-between text-left py-5 group"
                                 >
                                     <span
-                                        className="text-[14px] font-semibold transition-colors"
+                                        className="text-[14px] font-semibold transition-colors duration-300"
                                         style={{
                                             fontFamily: "'Syne', sans-serif",
-                                            color: open === adv.id ? "#1D4ED8" : "#374151",
+                                            color: open === adv.id ? "#2d5ce9" : "#374151",
                                         }}
                                     >
                                         {adv.title}
                                     </span>
-                                    <span
-                                        className="text-[22px] font-light text-slate-400 transition-transform duration-300 shrink-0 ml-4"
-                                        style={{ transform: open === adv.id ? "rotate(45deg)" : "rotate(0deg)" }}
+                                    <div
+                                        className="w-8 h-8 rounded-full border flex items-center justify-center transition-all duration-300 shrink-0 ml-4 group-hover:bg-blue-50"
+                                        style={{
+                                            borderColor: open === adv.id ? "rgba(45,92,233,0.3)" : "rgba(0,0,0,0.1)",
+                                            backgroundColor: open === adv.id ? "rgba(45,92,233,0.05)" : "transparent",
+                                        }}
                                     >
-                                        +
-                                    </span>
+                                        <span
+                                            className="text-[18px] font-light transition-transform duration-300"
+                                            style={{ 
+                                                transform: open === adv.id ? "rotate(45deg)" : "rotate(0deg)",
+                                                color: open === adv.id ? "#2d5ce9" : "#94a3b8" 
+                                            }}
+                                        >
+                                            +
+                                        </span>
+                                    </div>
                                 </button>
                                 <motion.div
                                     initial={false}

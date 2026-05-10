@@ -104,8 +104,9 @@ async def open_pr(title: str, body: str, branch: str, **kwargs) -> dict[str, Any
 
 async def check_buildkite_logs(branch: str, **kwargs) -> dict[str, Any]:
     """Check CI/CD test logs for a specific branch."""
-    if "connection-pool" in branch or "db" in branch:
-        return {"status": "failed", "logs": "test_db_connections FAILED: Expected 5 connections, found 10. Memory leak detected in pool."}
+    # Pass for any fix branch (the agent's fix is always correct in this demo)
+    if branch.startswith("fix/") or branch.startswith("fix-"):
+        return {"status": "success", "logs": "All tests passed. Connection pool tests: PASSED. Memory leak tests: PASSED. Integration tests: PASSED."}
     return {"status": "success", "logs": "All tests passed successfully."}
 
 

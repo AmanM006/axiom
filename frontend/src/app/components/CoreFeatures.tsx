@@ -31,7 +31,7 @@ const features = [
 
 export default function CoreFeatures() {
     return (
-        <section className="relative py-32 px-10 overflow-hidden" style={{ background: "#070B1A" }}>
+        <section className="relative py-32 px-10 overflow-hidden" style={{ background: "#040710" }}>
             <div className="absolute inset-0 pointer-events-none">
                 <div
                     className="absolute rounded-full"
@@ -41,8 +41,8 @@ export default function CoreFeatures() {
                         transform: "translateX(-50%)",
                         width: "70vw",
                         height: "50vh",
-                        background: "radial-gradient(ellipse, rgba(29,78,216,0.08) 0%, transparent 70%)",
-                        filter: "blur(60px)",
+                        background: "radial-gradient(ellipse, rgba(75,123,245,0.12) 0%, transparent 70%)",
+                        filter: "blur(80px)",
                     }}
                 />
             </div>
@@ -50,7 +50,7 @@ export default function CoreFeatures() {
             <div className="relative z-10 max-w-7xl mx-auto">
                 <span
                     className="text-[9px] font-bold tracking-[0.26em] uppercase mb-12 block"
-                    style={{ fontFamily: "'Syne', sans-serif", color: "rgba(96,165,250,0.5)" }}
+                    style={{ fontFamily: "'Syne', sans-serif", color: "rgba(75,123,245,0.7)" }}
                 >
                     — CORE FEATURES —
                 </span>
@@ -72,15 +72,15 @@ export default function CoreFeatures() {
                     >
                         What makes AXIOM
                         <br />
-                        <span style={{ fontStyle: "italic", fontWeight: 300, color: "#93C5FD" }}>
+                        <span style={{ fontStyle: "italic", fontWeight: 300, color: "#4b7bf5" }}>
                             unstoppable
                         </span>
                     </h2>
                 </motion.div>
 
                 <div
-                    className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 overflow-hidden rounded-2xl"
-                    style={{ border: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.025)" }}
+                    className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 overflow-hidden rounded-2xl relative"
+                    style={{ border: "1px solid rgba(255,255,255,0.08)", background: "rgba(10,13,24,0.6)", backdropFilter: "blur(20px)" }}
                 >
                     {features.map((f, i) => (
                         <motion.div
@@ -89,14 +89,16 @@ export default function CoreFeatures() {
                             whileInView={{ opacity: 1, y: 0 }}
                             viewport={{ once: true }}
                             transition={{ duration: 0.7, delay: i * 0.1 }}
-                            className="p-8 transition-colors duration-300 group"
+                            className="p-8 transition-all duration-500 group relative overflow-hidden"
                             style={{
                                 borderRight: i < 3 ? "1px solid rgba(255,255,255,0.06)" : "none",
                                 background: "transparent",
                             }}
-                            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(75,123,245,0.03)")}
                             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                         >
+                            {/* Hover highlight line */}
+                            <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#2d5ce9] to-[#4b7bf5] opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                             <h3
                                 className="text-white text-[13px] font-bold mb-1 leading-snug"
                                 style={{ fontFamily: "'Syne', sans-serif" }}
@@ -104,8 +106,8 @@ export default function CoreFeatures() {
                                 {f.title}
                             </h3>
                             <p
-                                className="text-[10px] font-bold tracking-[0.14em] uppercase mb-4"
-                                style={{ fontFamily: "'Syne', sans-serif", color: "rgba(96,165,250,0.6)" }}
+                                className="text-[10px] font-bold tracking-[0.14em] uppercase mb-4 transition-colors duration-300"
+                                style={{ fontFamily: "'Syne', sans-serif", color: "rgba(75,123,245,0.6)" }}
                             >
                                 {f.subtitle}
                             </p>

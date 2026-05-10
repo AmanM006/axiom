@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { AgentEvent } from "../hooks/useAgentStream";
 
 interface ActionLogProps {
   events: AgentEvent[];
   incidentId: string;
+  onOpenPR?: () => void;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
@@ -28,27 +29,78 @@ const TOOL_CONFIG: Record<
   unknown: { icon: <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5"/></svg>, color: "text-tertiary" },
 };
 
-export default function ActionLog({ events, incidentId }: ActionLogProps) {
+const formatContent = (content: string) => {
+  if (!content) return "";
+  
+  let result = content;
+  try {
+    // Try to parse the top-level string
+    let parsed = JSON.parse(content);
+    
+    // If the result is another string (double-encoded), parse it again
+    if (typeof parsed === 'string') {
+      try {
+        parsed = JSON.parse(parsed);
+      } catch {
+        // Stay with first-level string
+      }
+    }
+
+    if (typeof parsed === 'object' && parsed !== null) {
+      // 1. Handle standard tool output with 'content'
+      if ('content' in parsed && typeof parsed.content === 'string') {
+        result = parsed.content;
+      } 
+      // 2. Handle command results with stdout/stderr
+      else if ('stdout' in parsed || 'stderr' in parsed) {
+        result = [parsed.stdout, parsed.stderr].filter(Boolean).join('\n');
+      }
+      // 3. Fallback to pretty-print the object
+      else {
+        result = JSON.stringify(parsed, null, 2);
+      }
+    } else {
+      result = String(parsed);
+    }
+  } catch {
+    // Not valid JSON, keep as is
+    result = content;
+  }
+
+  // Final cleanup: if the string still contains literal \n sequences 
+  // (often happens when tools output raw Python/Shell strings)
+  return result
+    .replace(/\\n/g, '\n')
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/\\"/g, '"');
+};
+
+export default function ActionLog({ events, incidentId, onOpenPR }: ActionLogProps) {
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [handledApprovals, setHandledApprovals] = useState<Set<number>>(new Set());
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const actionEvents = events.filter(
     (e) => e.type === "action" || e.type === "result" || e.type === "approval_required",
   );
 
-  const handleApprove = async (eventIndex: number, approved: boolean) => {
+  // Auto-scroll to bottom when new events arrive
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: "smooth"
+      });
+    }
+  }, [actionEvents.length]);
+
+  const handleApprove = async (step: number, approved: boolean) => {
     setIsSubmitting(true);
     try {
       await fetch(`${API_URL}/api/v1/incidents/${incidentId}/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ approved }),
-      });
-      setHandledApprovals(prev => {
-        const next = new Set(prev);
-        next.add(eventIndex);
-        return next;
+        body: JSON.stringify({ approved, step }),
       });
     } catch (err) {
       console.error("Failed to approve action:", err);
@@ -57,15 +109,60 @@ export default function ActionLog({ events, incidentId }: ActionLogProps) {
     }
   };
 
+  const isResolved = events.some(e => e.type === "resolved");
+  const hasReport = events.some(e => e.type === "report");
+
+  const handleDownloadReport = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/v1/incidents/${incidentId}/report`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const report = await res.json();
+      const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${report.report_id || incidentId}_report.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Failed to download report:", err);
+    }
+  };
+
   return (
     <aside className="w-full flex flex-col linear-sidebar shrink-0 h-full">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-[var(--linear-border)]">
+      <div className="px-4 py-3 border-b border-[var(--linear-border)] flex items-center justify-between">
         <h2 className="text-[13px] font-medium text-primary">Tool Activity</h2>
+        <div className="flex gap-2">
+        {(isResolved || hasReport) && (
+          <button
+            onClick={handleDownloadReport}
+            className="flex items-center gap-1.5 text-[11px] font-medium text-[#5E6AD2] hover:text-white bg-[#5E6AD2]/10 hover:bg-[#5E6AD2]/30 px-2.5 py-1 rounded-md border border-[#5E6AD2]/20 transition-colors"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 2.5V10.5M8 10.5L4.5 7M8 10.5L11.5 7M3.5 13.5H12.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            Report
+          </button>
+        )}
+        {events.some(e => e.type === "result" && e.metadata.diff) && onOpenPR && (
+          <button
+            onClick={onOpenPR}
+            className="flex items-center gap-1.5 text-[11px] font-medium text-[#34A853] hover:text-white bg-[#34A853]/10 hover:bg-[#34A853]/30 px-2.5 py-1 rounded-md border border-[#34A853]/20 transition-colors"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2 11l6 3 6-3M2 8l6 3 6-3M2 5l6-3 6 3-6 3-6-3Z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            View PR Diff
+          </button>
+        )}
+        </div>
       </div>
 
       {/* Timeline */}
-      <div className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
+      <div 
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5 scroll-smooth"
+      >
         {actionEvents.length === 0 && (
           <div className="px-4 py-6 text-center text-tertiary text-[13px]">
             No activity yet.
@@ -77,19 +174,21 @@ export default function ActionLog({ events, incidentId }: ActionLogProps) {
           const cfg = TOOL_CONFIG[tool] || TOOL_CONFIG.unknown;
           const isResult = event.type === "result";
           const isApproval = event.type === "approval_required";
+          const isHandled = i < actionEvents.length - 1;
           const hasError = event.content.toLowerCase().includes("error") || event.content.toLowerCase().includes("denied");
           const isExpanded = expandedIndex === i;
           
-          let displayContent = event.content;
-          if (!isExpanded && event.content.length > 60) {
-            displayContent = event.content.slice(0, 60) + "...";
+          const formatted = formatContent(event.content);
+          let displayContent = formatted;
+          if (!isExpanded && formatted.length > 60) {
+            displayContent = formatted.slice(0, 60) + "...";
           }
 
           return (
             <div
               key={`action-${i}`}
               className={`w-full text-left px-3 py-2 rounded-[6px] transition-colors group ${
-                isApproval && !handledApprovals.has(i) 
+                isApproval && !isHandled 
                   ? "bg-[#E95460]/10 border border-[#E95460]/30" 
                   : isExpanded 
                     ? "bg-[var(--linear-hover-active)]" 
@@ -108,7 +207,7 @@ export default function ActionLog({ events, incidentId }: ActionLogProps) {
                   <div className="flex items-center gap-2 mb-0.5">
                     <span className="text-[13px] font-medium text-primary flex items-center gap-2">
                       {tool}
-                      {isApproval && !handledApprovals.has(i) && (
+                      {isApproval && !isHandled && (
                         <span className="bg-[#E95460] text-white text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide">
                           Action Required
                         </span>
@@ -132,17 +231,17 @@ export default function ActionLog({ events, incidentId }: ActionLogProps) {
                   </div>
 
                   {/* Approval UI */}
-                  {isApproval && !handledApprovals.has(i) && (
+                  {isApproval && !isHandled && (
                     <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
                       <button
-                        onClick={() => handleApprove(i, true)}
+                        onClick={() => handleApprove(event.step, true)}
                         disabled={isSubmitting}
                         className="flex-1 bg-[#34A853] hover:bg-[#34A853]/80 text-white text-[12px] font-medium py-1.5 rounded transition-colors disabled:opacity-50"
                       >
                         Approve
                       </button>
                       <button
-                        onClick={() => handleApprove(i, false)}
+                        onClick={() => handleApprove(event.step, false)}
                         disabled={isSubmitting}
                         className="flex-1 bg-[#E95460] hover:bg-[#E95460]/80 text-white text-[12px] font-medium py-1.5 rounded transition-colors disabled:opacity-50"
                       >

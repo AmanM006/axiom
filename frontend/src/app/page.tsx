@@ -7,6 +7,7 @@ import {
   FlaskConical, BarChart3, Zap, ChevronRight, LucideIcon, Bell, Clock, Search, List, ChevronDown, Layout
 } from "lucide-react";
 
+
 // ── Dashboard Data ─────────────────────────────────────────────────────────────
 const REASONING_STEPS = [
   "Fetching recent telemetry for payment-service in production namespace...",
@@ -591,14 +592,58 @@ export default function AXIOM() {
         .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b98166; }
         .dash-header-text { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; color: rgba(255,255,255,0.5); font-family: 'DM Mono', monospace; text-transform: uppercase; }
 
-        .dash-sidebar { background: #000; border-right: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; overflow-y: auto; scrollbar-width: none; }
+        .dash-sidebar { 
+          background: rgba(0,0,0,0.4); 
+          backdrop-filter: blur(20px);
+          border-right: 1px solid rgba(255,255,255,0.06); 
+          display: flex; flex-direction: column; 
+          overflow-y: auto; scrollbar-width: none; 
+        }
         .dash-sidebar::-webkit-scrollbar { display: none; }
-        .sidebar-section { padding: 16px 12px 8px; }
-        .sidebar-label { font-size: 9px; font-weight: 700; color: rgba(255,255,255,0.25); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; display: block; }
-        .sidebar-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 6px; font-size: 12px; color: rgba(255,255,255,0.5); cursor: pointer; transition: all 0.2s; margin-bottom: 1px; }
-        .sidebar-item:hover { background: rgba(255,255,255,0.05); color: #fff; }
-        .sidebar-item.active { background: rgba(255,255,255,0.08); color: #fff; }
-        .sidebar-item.incident { color: #f87171; background: rgba(248,113,113,0.05); border: 1px solid rgba(248,113,113,0.1); }
+        .sidebar-section { padding: 20px 12px 8px; }
+        .sidebar-label { 
+          font-size: 9px; font-weight: 700; color: rgba(255,255,255,0.2); 
+          text-transform: uppercase; letter-spacing: 0.12em; 
+          margin-bottom: 10px; padding-left: 12px;
+          display: block; 
+        }
+        .sidebar-item { 
+          display: flex; align-items: center; gap: 10px; 
+          padding: 8px 12px; border-radius: 8px; 
+          font-size: 13px; font-weight: 500;
+          color: rgba(255,255,255,0.45); 
+          cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); 
+          margin-bottom: 2px;
+          border: 1px solid transparent;
+        }
+        .sidebar-item:hover { 
+          background: rgba(255,255,255,0.04); 
+          color: rgba(255,255,255,0.9);
+          transform: translateX(2px);
+        }
+        .sidebar-item.active { 
+          background: rgba(255,255,255,0.07); 
+          color: #fff; 
+          border-color: rgba(255,255,255,0.05);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        .sidebar-item.incident { 
+          color: #f87171; 
+          background: rgba(248,113,113,0.03); 
+          border: 1px solid rgba(248,113,113,0.08); 
+        }
+        .sidebar-item.incident:hover {
+          background: rgba(248,113,113,0.08);
+          color: #fca5a5;
+        }
+        .sidebar-badge {
+          margin-left: auto;
+          font-size: 10px;
+          font-weight: 700;
+          padding: 1px 6px;
+          border-radius: 4px;
+          font-family: 'DM Mono', monospace;
+        }
         
         .dash-main { background: #050505; display: flex; flex-direction: column; overflow: hidden; }
         .dash-top-action { padding: 24px 32px; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: space-between; }
@@ -783,38 +828,50 @@ export default function AXIOM() {
               <div className="dash-sidebar">
                 <div className="sidebar-section">
                   <span className="sidebar-label">AXIOM Workspace</span>
-                  <div className="sidebar-item active"><Layout size={14} /> Alerts <span style={{ marginLeft: 'auto', background: 'rgba(248,113,113,0.2)', color: '#f87171', padding: '0 5px', borderRadius: 4, fontSize: 9 }}>3</span></div>
+                  <div className="sidebar-item active">
+                    <Layout size={14} strokeWidth={2} />
+                    <span>Alerts</span>
+                    <span className="sidebar-badge" style={{ background: 'rgba(248,113,113,0.15)', color: '#f87171' }}>3</span>
+                  </div>
                 </div>
 
-                <div className="sidebar-section">
+                <div className="sidebar-section" style={{ marginTop: -10 }}>
                   <span className="sidebar-label">Triage Dashboard</span>
-                  <div className="sidebar-item incident"><Activity size={14} /> ACTIVE INCIDENTS</div>
-                  <div className="sidebar-item" style={{ fontSize: 10, paddingLeft: 34, color: 'rgba(255,255,255,0.2)' }}>No past incidents yet</div>
+                  <div className="sidebar-item incident">
+                    <Activity size={14} strokeWidth={2.5} />
+                    <span>ACTIVE INCIDENTS</span>
+                  </div>
+                  <div className="sidebar-item" style={{ opacity: 0.3, fontSize: 11, paddingLeft: 38 }}>
+                    <span>No resolved incidents</span>
+                  </div>
                 </div>
 
-                <div className="sidebar-section">
+                <div className="sidebar-section" style={{ marginTop: -10 }}>
                   <span className="sidebar-label">SRE Copilot</span>
-                  <div className="sidebar-item"><Plus size={14} /> New Chat</div>
-                  <div className="sidebar-item"><Terminal size={14} /> session_1777832237552</div>
+                  <div className="sidebar-item"><Plus size={14} /> <span>New Chat</span></div>
+                  <div className="sidebar-item" style={{ fontSize: 12 }}>
+                    <Terminal size={14} strokeWidth={1.5} />
+                    <span style={{ opacity: 0.6 }}>session_177783...</span>
+                  </div>
                 </div>
 
-                <div className="sidebar-section">
+                <div className="sidebar-section" style={{ marginTop: -10 }}>
                   <span className="sidebar-label">Infrastructure</span>
-                  <div className="sidebar-item"><Activity size={14} /> Service Health</div>
-                  <div className="sidebar-item"><BarChart3 size={14} /> SLO Tracking</div>
-                  <div className="sidebar-item"><User size={14} /> On-call Rotation</div>
+                  <div className="sidebar-item"><Activity size={14} /> <span>Service Health</span></div>
+                  <div className="sidebar-item"><BarChart3 size={14} /> <span>SLO Tracking</span></div>
+                  <div className="sidebar-item"><User size={14} /> <span>On-call Rotation</span></div>
                 </div>
 
-                <div className="sidebar-section">
+                <div className="sidebar-section" style={{ marginTop: -10 }}>
                   <span className="sidebar-label">Critical Services</span>
-                  <div className="sidebar-item"><Database size={14} /> payment-service</div>
-                  <div className="sidebar-item"><Layers size={14} /> api gateway</div>
-                  <div className="sidebar-item"><Database size={14} /> db-cluster-01</div>
+                  <div className="sidebar-item"><Database size={14} /> <span>payment-service</span></div>
+                  <div className="sidebar-item"><Layers size={14} /> <span>api-gateway</span></div>
                 </div>
 
-                <div className="sidebar-section">
-                  <span className="sidebar-label">Environments</span>
-                  <div className="sidebar-item"><Cloud size={14} /> Production <ChevronRight size={12} style={{ marginLeft: 'auto' }} /></div>
+                <div className="sidebar-section" style={{ marginTop: 'auto', paddingBottom: 20 }}>
+                  <div className="sidebar-item" style={{ background: 'rgba(255,255,255,0.03)' }}>
+                    <Settings size={14} /> <span>Settings</span>
+                  </div>
                 </div>
               </div>
 
@@ -942,6 +999,7 @@ export default function AXIOM() {
           </div>
         </div>
       </section>
+
 
       {/* ══ PRICING ══ */}
       <section className="pricing-section" id="pricing">

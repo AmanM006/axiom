@@ -233,14 +233,29 @@ export default function Sidebar({
   }, [activeMainTab, API_URL]);
 
   return (
-    <aside className="flex flex-col h-full shrink-0 select-none" style={{
+    <aside className="flex flex-col h-full shrink-0 select-none dashboard-sidebar" style={{
       width: 240,
-      backgroundColor: 'rgba(10, 11, 13, 0.65)',
-      backdropFilter: 'blur(20px) saturate(160%)',
-      WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+      backgroundColor: 'rgba(18, 18, 20, 0.9)',
+      backdropFilter: 'blur(30px) saturate(150%)',
+      WebkitBackdropFilter: 'blur(30px) saturate(150%)',
       borderRight: '1px solid rgba(255,255,255,0.06)',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif',
+      fontFamily: 'Inter, -apple-system, system-ui, sans-serif',
     }}>
+      <style jsx>{`
+        .dashboard-sidebar :global(.scrollbar-hide)::-webkit-scrollbar {
+          width: 4px;
+        }
+        .dashboard-sidebar :global(.scrollbar-hide)::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .dashboard-sidebar :global(.scrollbar-hide)::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.08);
+          border-radius: 20px;
+        }
+        .dashboard-sidebar :global(.scrollbar-hide)::-webkit-scrollbar-thumb:hover {
+          background: rgba(255, 255, 255, 0.15);
+        }
+      `}</style>
 
       {/* Header (Anchored) */}
       <div className="flex items-center px-3 pt-[14px] pb-[10px] shrink-0">

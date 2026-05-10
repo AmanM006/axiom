@@ -25,3 +25,5 @@ class AgentState:
     fixed_file_content: str = ""
     branch_name: str = ""
     config: dict[str, Any] = field(default_factory=dict)
+    use_fallback: bool = False  # Set True when LLM is stuck; forces deterministic plan
+    report: dict[str, Any] = field(default_factory=dict)

@@ -28,10 +28,11 @@ export interface AgentEvent {
     | "replan"
     | "resolved"
     | "error"
-    | "approval_required";
+    | "approval_required"
+    | "report";
   step: number;
   content: string;
-  metadata: AgentEventMetadata;
+  metadata: AgentEventMetadata & { report_id?: string; step?: number; args?: Record<string, unknown> };
 }
 
 export type AgentStatus = "idle" | "running" | "resolved" | "error";
@@ -143,6 +144,12 @@ export function useAgentStream() {
             if (event.type === "resolved") {
               newStatus = "resolved";
               stopStream(incidentId);
+              // Notify backend so it flips metrics to healthy
+              fetch(`${API_URL}/incidents/${incidentId}/resolve`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ summary: event.content }),
+              }).catch(() => {});
             } else if (event.type === "error") {
               newStatus = "error";
               stopStream(incidentId);

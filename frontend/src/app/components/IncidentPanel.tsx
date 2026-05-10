@@ -25,7 +25,7 @@ interface IncidentPanelProps {
   selectedIncident: string;
   onSelectIncident: (id: string) => void;
   onStartAgent: () => void;
-  onOpenChat: () => void;
+  onOpenChat: (query?: string) => void;
   agentStatus: AgentStatus;
   selectedEnv?: string;
 }
@@ -161,11 +161,9 @@ export default function IncidentDetails({
         <div className="flex items-center gap-[24px]">
           <MetricPill label="CPU / Mem"
             value={`${metrics.cpu_percent?.toFixed(0)}%  ${metrics.memory_mb?.toFixed(0)}MB`}
-            alert={(metrics.cpu_percent ?? 0) > 80 || (metrics.memory_mb ?? 0) > 3000}
           />
           <MetricPill label="Err / Lat"
             value={`${metrics.error_rate?.toFixed(1)}%  ${metrics.latency_ms?.toFixed(0)}ms`}
-            alert={(metrics.error_rate ?? 0) > 5 || (metrics.latency_ms ?? 0) > 1000}
           />
           <div
             className="flex flex-col items-end gap-[2px] pl-[20px]"
@@ -184,7 +182,7 @@ export default function IncidentDetails({
       {/* Right: CTA */}
       {agentStatus === "resolved" ? (
         <button
-          onClick={onOpenChat}
+          onClick={() => onOpenChat("Summarize this fix and root cause")}
           className="flex items-center gap-[6px] px-[16px] py-[7px] rounded-[7px] transition-all"
           style={{
             fontSize: 13, fontWeight: 500, fontFamily: FONT, letterSpacing: '-0.01em',

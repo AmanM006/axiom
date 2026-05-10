@@ -64,11 +64,11 @@ const benchmarks = [
 
 export default function Benchmarks() {
     return (
-        <section className="relative py-32 px-10" style={{ background: "#070B1A" }}>
+        <section className="relative py-32 px-10" style={{ background: "#040710" }}>
             <div className="relative z-10 max-w-7xl mx-auto">
                 <span
                     className="text-[9px] font-bold tracking-[0.26em] uppercase mb-12 block"
-                    style={{ fontFamily: "'Syne', sans-serif", color: "rgba(96,165,250,0.5)" }}
+                    style={{ fontFamily: "'Syne', sans-serif", color: "rgba(75,123,245,0.7)" }}
                 >
                     — V1 IN ACTION —
                 </span>
@@ -89,7 +89,7 @@ export default function Benchmarks() {
                         }}
                     >
                         Proven{" "}
-                        <span style={{ fontStyle: "italic", fontWeight: 300, color: "#93C5FD" }}>
+                        <span style={{ fontStyle: "italic", fontWeight: 300, color: "#4b7bf5" }}>
                             performance
                         </span>
                         <br />
@@ -122,9 +122,9 @@ export default function Benchmarks() {
                             </div>
                             <div className="space-y-2.5">
                                 {bench.results.map((r: BenchmarkResult, ri) => (
-                                    <div key={r.name} className="flex items-center gap-4">
+                                    <div key={r.name} className="flex items-center gap-4 group cursor-default">
                                         <span
-                                            className="text-[12px] shrink-0"
+                                            className="text-[12px] shrink-0 transition-colors"
                                             style={{
                                                 width: "180px",
                                                 color: r.highlight ? "white" : "rgba(100,116,139,0.7)",
@@ -132,7 +132,7 @@ export default function Benchmarks() {
                                                 fontFamily: r.highlight ? "'Syne', sans-serif" : "inherit",
                                             }}
                                         >
-                                            {r.name}
+                                            <span className={r.highlight ? "" : "group-hover:text-slate-300"}>{r.name}</span>
                                         </span>
                                         <div className="flex-1 relative h-6 flex items-center">
                                             <motion.div
@@ -140,25 +140,30 @@ export default function Benchmarks() {
                                                 whileInView={{ width: `${r.score}%` }}
                                                 viewport={{ once: true }}
                                                 transition={{ duration: 1, delay: 0.2 + ri * 0.08, ease: [0.16, 1, 0.3, 1] }}
-                                                className="h-full rounded-sm"
+                                                className="h-full rounded-sm relative"
                                                 style={{
                                                     background: r.highlight
-                                                        ? "linear-gradient(90deg, #1D4ED8 0%, #4F46E5 100%)"
+                                                        ? "linear-gradient(90deg, #2d5ce9 0%, #4b7bf5 100%)"
                                                         : "rgba(255,255,255,0.06)",
                                                     minWidth: 2,
                                                     border: r.highlight ? "none" : "1px solid rgba(255,255,255,0.04)",
+                                                    boxShadow: r.highlight ? "0 0 15px rgba(75,123,245,0.4)" : "none",
                                                 }}
-                                            />
+                                            >
+                                                {r.highlight && (
+                                                    <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-20 transition-opacity duration-300 rounded-sm" />
+                                                )}
+                                            </motion.div>
                                         </div>
                                         <span
-                                            className="text-[12px] w-14 text-right shrink-0"
+                                            className="text-[12px] w-14 text-right shrink-0 transition-colors"
                                             style={{
                                                 fontFamily: "'JetBrains Mono', monospace",
-                                                color: r.highlight ? "#93C5FD" : "rgba(100,116,139,0.6)",
+                                                color: r.highlight ? "#4b7bf5" : "rgba(100,116,139,0.6)",
                                                 fontWeight: r.highlight ? 500 : 400,
                                             }}
                                         >
-                                            {r.label ?? r.score}
+                                            <span className={r.highlight ? "" : "group-hover:text-slate-400"}>{r.label ?? r.score}</span>
                                         </span>
                                     </div>
                                 ))}
